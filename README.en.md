@@ -10,7 +10,9 @@ Glint is a customizable text selection assistant for Windows. Translate while re
 
 [Download Glint](https://github.com/yshsharke/Glint/releases) · [Report an issue](https://github.com/yshsharke/Glint/issues) · [Changelog](CHANGELOG.md)
 
-<img src="docs/assets/settings.png" width="760" alt="Glint settings with custom actions, prompts and toolbar preview">
+<img src="docs/assets/toolbar.png" width="419" alt="Glint selection toolbar with Settings, Translate, Explain, Polish, Search and Copy">
+
+Select text to bring everyday actions within reach. The screenshots below preview the 0.2.0 interface; see Releases for available downloads.
 
 ## Download and install
 
@@ -33,7 +35,7 @@ GitHub's **Source code** archives are for development, not ready-to-run download
 2. Select text in another application to show the toolbar, or press **Ctrl + Alt + G** to capture the current selection.
 3. Choose **翻译 (Translate)** or **润色 (Polish)** to open a result card. Copy and search work without a model connection.
 
-Click the Glint icon on the toolbar to open settings. Closing settings keeps Glint running in the system tray. Double-click the tray icon to reopen it, or choose **退出 (Quit)** to exit completely.
+Click the Glint icon on the toolbar to open settings. Closing settings keeps Glint running in the system tray. Left-click the tray icon to reopen settings; right-click for **打开设置 (Open settings)**, **停止划词 / 启用划词 (Disable / Enable selection)** and **退出 (Quit)**. You can also quit from the bottom-left corner of settings.
 
 ## Make it yours
 
@@ -42,13 +44,17 @@ Click the Glint icon on the toolbar to open settings. Closing settings keeps Gli
 - **Control when it appears.** Use automatic selection or a keyboard shortcut, exclude specific apps and optionally enable clipboard fallback.
 - **A compact Windows-style interface.** Follow the system theme or choose light/dark, with four accent colors and two toolbar densities.
 
+<img src="docs/assets/settings.png" width="760" alt="Glint 0.2.0 Actions settings showing the action list, name, icon, type, prompt and toolbar preview">
+
+Manage actions on one page: adjust their names, icons, types and prompts, then check their order in the toolbar preview below.
+
 Use `{text}` in an action prompt to insert the selected text. For example:
 
 > Rewrite this passage in clear, natural English. Preserve its meaning and return only the revised text: {text}
 
 ## Work with the result
 
-<img src="docs/assets/result.png" width="480" alt="Translation result with Stop, Retry, Copy and Save buttons">
+<img src="docs/assets/result.png" width="480" alt="Glint translation card with the source app, expanded English original, Chinese translation, and Stop, Retry, Copy and Save buttons">
 
 Results stream into a separate card. Stop a response, retry it or copy it with one click. The header shows the action and source app; expand the original text to review it.
 
