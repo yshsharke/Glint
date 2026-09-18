@@ -385,7 +385,7 @@ else {
         fs.writeFileSync(path.join(testRoot, 'work', 'smoke-success.json'), JSON.stringify({ packaged: app.isPackaged, check: packageCheck ? 'startup' : 'full', version: app.getVersion() }));
         quitting = true; closeRecordStores(); host?.kill(); app.exit(0);
       }
-      catch (error) { console.error(error); fs.mkdirSync(path.join(testRoot, 'work'), { recursive: true }); fs.writeFileSync(path.join(testRoot, 'work', 'smoke-error.txt'), String(error)); quitting = true; host?.kill(); app.exit(1); }
+      catch (error) { console.error(error); fs.mkdirSync(path.join(testRoot, 'work'), { recursive: true }); fs.writeFileSync(path.join(testRoot, 'work', 'smoke-error.txt'), error instanceof Error ? error.stack || error.message : String(error)); quitting = true; host?.kill(); app.exit(1); }
       finally { host?.kill(); }
     }
   }).catch(error => { logger?.write('app.start-failed', { code: errorCode(error) }); console.error(error); app.exit(1); });
@@ -400,7 +400,12 @@ async function runPackageCheck() {
   }
   assert.equal(status.hook, 'ready', status.message);
   assert.equal(await setup.webContents.executeJavaScript("typeof window.glint.save"), 'function');
-  assert.equal(await setup.webContents.executeJavaScript("!!document.querySelector('[data-page=actions]')"), true);
+  // did-finish-load precedes the renderer's asynchronous IPC snapshot/render.
+  // Wait for the actual controls, particularly on a cold portable extraction.
+  while (!await setup.webContents.executeJavaScript("!!document.querySelector('[data-page=actions]')")) {
+    if (Date.now() > deadline) throw new Error('Packaged settings controls did not render');
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
   for (const file of Object.values(recordsPaths)) assert.ok(fs.existsSync(file), 'Packaged SQLite initialization');
   assert.ok(!paths.data.startsWith(root), 'Packaged test data must be outside ASAR');
 }

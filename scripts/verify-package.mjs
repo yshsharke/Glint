@@ -4,6 +4,15 @@ import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { listPackage } from '@electron/asar';
 
+process.on('uncaughtException', error => {
+  console.error(error);
+  if (process.env.GITHUB_ACTIONS) {
+    const detail = (error.stack || error.message).slice(0, 8000).replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
+    console.error(`::error title=Packaged application verification::${detail}`);
+  }
+  process.exit(1);
+});
+
 const { version } = JSON.parse(readFileSync('package.json', 'utf8'));
 const archive = 'release/win-unpacked/resources/app.asar';
 const entries = listPackage(archive).map(name => name.replaceAll('\\', '/'));
