@@ -31,7 +31,7 @@ npm run smoke:packaged
 4. `Release` workflow 会在 Windows 构建、验证打包应用，上传构建产物；随后核对 SHA-256，建立包含两个 exe 与校验文件的 GitHub 预览 Release。标签必须与 package.json 的版本一致。
 5. 验证 GitHub Release 三份附件均可下载，README 的 Releases 链接可访问。手动下载后，可用 `Get-FileHash <文件> -Algorithm SHA256` 对照校验值。
 
-手动运行 Release workflow 且选择 `main` 时，只构建并保留 Actions artifacts，不创建公开 Release。选择版本标签会进入发布流程。发布任务使用 GitHub 内置令牌，只有发布任务获得 `contents: write`；不需要个人访问令牌。
+推送 `main` 或手动运行 Release workflow 且选择 `main` 时，只构建并保留 Actions artifacts，不创建公开 Release。先确认分支构建通过，再推送版本标签进入发布流程。发布任务使用 GitHub 内置令牌，只有发布任务获得 `contents: write`；不需要个人访问令牌。
 
 若上传中断而留下草稿，先确认该 tag 没有公开版本，再由维护者处理草稿和重新运行；流程不会自动覆盖已发布的附件。当前每个版本均标记为 prerelease，准备稳定版时需明确修改此策略。
 

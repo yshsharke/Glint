@@ -7,7 +7,7 @@ import { randomUUID } from 'node:crypto';
 import { RecordStore } from './records';
 import { AppLogger, errorCode } from './logger';
 import { runtimePaths } from './runtime-paths';
-import { pathToFileURL } from 'node:url';
+import { isAppPage } from './ipc-origin';
 import type { TextSelectionData } from 'selection-hook';
 import { defaults, endpoint, modelErrorMessage, placeToolbar, readSSE, recordKind, validateSettings } from './core';
 import type { RecordKind, ResultState, Selection, Settings, Snapshot, Status, UIEvent } from './core';
@@ -268,7 +268,7 @@ async function generate(prompt: string, text: string, state: ResultState, contro
 }
 function guard(event: IpcMainInvokeEvent) {
   const allowed = [setup, toolbar, resultWindow].some(win => win && !win.isDestroyed() && win.webContents.id === event.sender.id);
-  if (!allowed || event.senderFrame !== event.sender.mainFrame || !event.sender.getURL().startsWith(pathToFileURL(page).href)) throw new Error('Untrusted IPC sender');
+  if (!allowed || event.senderFrame !== event.sender.mainFrame || !isAppPage(event.sender.getURL(), page)) throw new Error('Untrusted IPC sender');
 }
 function installIPC() {
   const handle = (name: string, fn: (event: IpcMainInvokeEvent, ...args: any[]) => unknown) => ipcMain.handle(`glint:${name}`, (event, ...args) => { guard(event); return fn(event, ...args); });
@@ -400,6 +400,8 @@ async function runPackageCheck() {
   }
   assert.equal(status.hook, 'ready', status.message);
   assert.equal(await setup.webContents.executeJavaScript("typeof window.glint.save"), 'function');
+  const bridgeResult = await setup.webContents.executeJavaScript("window.glint.snapshot().then(() => 'ok').catch(error => String(error))");
+  assert.equal(bridgeResult, 'ok', `Packaged IPC bridge failed (${setup.webContents.getURL()}): ${bridgeResult}`);
   // did-finish-load precedes the renderer's asynchronous IPC snapshot/render.
   // Wait for the actual controls, particularly on a cold portable extraction.
   while (!await setup.webContents.executeJavaScript("!!document.querySelector('[data-page=actions]')")) {

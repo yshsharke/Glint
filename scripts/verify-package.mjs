@@ -26,7 +26,14 @@ for (const name of entries) {
 assert.ok(existsSync('release/win-unpacked/resources/app.asar.unpacked/node_modules/selection-hook/prebuilds/win32-x64/selection-hook.node'), 'Native selection binary must be unpacked');
 
 mkdirSync('work', { recursive: true });
-for (const file of ['release/win-unpacked/Glint.exe', `release/Glint-${version}-windows-x64-portable.exe`]) {
+const executables = ['release/win-unpacked/Glint.exe', `release/Glint-${version}-windows-x64-portable.exe`];
+// Exercise the same 8.3 path representation used by NSIS on Windows runners.
+const shortPath = spawnSync('powershell', ['-NoProfile', '-Command', '(New-Object -ComObject Scripting.FileSystemObject).GetFolder($env:GLINT_PACKAGE_DIR).ShortPath'], {
+  env: { ...process.env, GLINT_PACKAGE_DIR: path.resolve('release/win-unpacked') }, encoding: 'utf8', windowsHide: true
+});
+assert.equal(shortPath.status, 0, 'Could not resolve Windows short path');
+if (!process.argv.includes('--smoke') && shortPath.stdout.includes('~')) executables.push(path.join(shortPath.stdout.trim(), 'Glint.exe'));
+for (const file of executables) {
   const folder = mkdtempSync(path.resolve('work', 'packaged-check-'));
   const env = { ...process.env, GLINT_SMOKE_ROOT: folder };
   delete env.ELECTRON_RUN_AS_NODE;

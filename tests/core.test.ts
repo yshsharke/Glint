@@ -3,10 +3,25 @@ import assert from 'node:assert/strict';
 import { DatabaseSync } from 'node:sqlite';
 import { mkdtempSync, unlinkSync, rmdirSync, readdirSync, readFileSync } from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
+import { isAppPage } from '../src/ipc-origin';
 import { RecordStore } from '../src/records';
 import { AppLogger, errorCode } from '../src/logger';
 import { runtimePaths } from '../src/runtime-paths';
 import { defaults, endpoint, modelErrorMessage, placeToolbar, readSSE, recordKind, validateSettings } from '../src/core';
+
+test('IPC page guard accepts Chromium short-path encoding but rejects other origins and lookalike files', () => {
+  const page = path.resolve('work', 'RUNNER~1', 'space 中文', 'index.html');
+  const url = pathToFileURL(page).href;
+  assert.equal(isAppPage(url + '?view=settings', page), true);
+  assert.equal(isAppPage(url.replace(/%7E/gi, '~') + '?view=settings', page), true);
+  assert.equal(isAppPage(url + '.attacker.html', page), false);
+  assert.equal(isAppPage(url.replace('index.html', 'other.html'), page), false);
+  assert.equal(isAppPage(url.replace('index.html', 'nested%2Findex.html'), page), false);
+  assert.equal(isAppPage('https://example.org/index.html', page), false);
+  assert.equal(isAppPage('file://other-host/share/index.html', page), false);
+  assert.equal(isAppPage('not a URL', page), false);
+});
 
 test('normal data and logs use LocalAppData while smoke stays in work', () => {
   const root = path.resolve('repo');
