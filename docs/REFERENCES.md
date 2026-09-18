@@ -2,6 +2,16 @@
 
 Reviewed on 2026-09-18.
 
+## Fluent UI React v9 (MIT)
+
+Glint uses Microsoft's official React v9 components, theme tokens, and Fluent motion presets. It retains its own compact window layout and Lucide catalog. This is Fluent for the web inside Electron, not native WinUI 3.
+
+- [Official React integration](https://fluent2.microsoft.design/get-started/develop)
+- [Fluent motion guidance](https://fluent2.microsoft.design/motion)
+- [Upstream implementation](https://github.com/microsoft/fluentui)
+
+The preview motion package is pinned and imported through `src/ui/motion.ts`; review its API when upgrading. Fluent motion observes reduced-motion preferences. Griffel requires runtime styles; the renderer CSP permits inline CSS while retaining local-only scripts, no renderer network access, sandboxing, and context isolation.
+
 ## Lucide (ISC)
 
 Pinned build dependency: `lucide-static@1.47.0` (1,848 catalog icons).

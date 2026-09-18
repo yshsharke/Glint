@@ -23,6 +23,10 @@ for (const name of entries) {
   assert.ok(!/^\/(work|src|tests|scripts|\.git|\.github)(\/|$)/.test(name), `Private/development directory in archive: ${name}`);
   assert.ok(!/\.(sqlite(?:-\w+)?|log|map)$/.test(name), `Unwanted packaged file: ${name}`);
 }
+for (const name of ['/dist/licenses/frontend/dependencies.json', '/dist/licenses/frontend/react/LICENSE', '/dist/licenses/frontend/react-dom/LICENSE', '/dist/licenses/frontend/@fluentui__react-motion/LICENSE']) {
+  assert.ok(entries.includes(name), `Missing frontend notice: ${name}`);
+}
+assert.ok(!entries.some(name => name.startsWith('/node_modules/@fluentui/') || name.startsWith('/node_modules/react/')), 'Bundled frontend libraries must not be duplicated as runtime packages');
 assert.ok(existsSync('release/win-unpacked/resources/app.asar.unpacked/node_modules/selection-hook/prebuilds/win32-x64/selection-hook.node'), 'Native selection binary must be unpacked');
 
 mkdirSync('work', { recursive: true });

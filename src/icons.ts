@@ -2,6 +2,7 @@ declare const GLINT_ICON_NAMES: string[];
 declare global { interface Window { glintIconTags?: Record<string, string[]> } }
 
 const names = new Set(GLINT_ICON_NAMES);
+export const iconCount = names.size;
 const aliases: Record<string, string> = {
   sliders: 'sliders-horizontal', bolt: 'zap', chevron: 'chevron-right',
   close: 'x', up: 'chevron-up', down: 'chevron-down',
@@ -44,7 +45,16 @@ const chineseKeywords: Record<string, string> = {
 };
 
 let catalogPromise: Promise<Record<string, string[]>> | undefined;
-function loadCatalog() {
+export function findIcons(query: string, all: boolean, tags: Record<string, string[]>) {
+  const terms = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (!terms.length) return all ? GLINT_ICON_NAMES : favorites;
+  const synonyms = Object.entries(chineseKeywords).filter(([keys]) => terms.some(term => keys.includes(term))).flatMap(([, words]) => words.split(' '));
+  return GLINT_ICON_NAMES.filter(name => {
+    const haystack = name.replaceAll('-', ' ') + ' ' + name + ' ' + (tags[name] || []).join(' ');
+    return terms.every(term => haystack.includes(term)) || synonyms.some(term => haystack.includes(term));
+  });
+}
+export function loadCatalog() {
   if (!catalogPromise) catalogPromise = new Promise<Record<string, string[]>>((resolve, reject) => {
     if (window.glintIconTags) { resolve(window.glintIconTags); return; }
     const script = document.createElement('script');
@@ -54,76 +64,4 @@ function loadCatalog() {
     document.head.append(script);
   });
   return catalogPromise;
-}
-
-// A modal keeps the action editor compact and gives keyboard users a focus trap.
-export function openIconPicker(current: string, onSelect: (name: string) => void) {
-  const dialog = document.createElement('dialog');
-  dialog.className = 'icon-dialog';
-  dialog.setAttribute('aria-labelledby', 'icon-dialog-title');
-  dialog.innerHTML = `<header class="icon-dialog-header"><h2 id="icon-dialog-title">选择图标</h2><span>Lucide · ${names.size} 个</span><button class="icon-button" data-picker-close aria-label="关闭图标选择">${icon('x')}</button></header>
-    <div class="icon-dialog-search"><input type="search" data-icon-search placeholder="搜索：翻译、代码、book…" aria-label="搜索图标" autocomplete="off" autofocus></div>
-    <div class="icon-dialog-tabs"><button data-icon-tab="common" aria-pressed="true">常用</button><button data-icon-tab="all" aria-pressed="false">全部图标</button></div>
-    <div class="icon-library-grid" aria-label="图标"></div>
-    <footer class="icon-dialog-footer"><span role="status"></span><div><button class="icon-button" data-picker-prev aria-label="上一页">${icon('chevron-left')}</button><span data-picker-page></span><button class="icon-button" data-picker-next aria-label="下一页">${icon('chevron-right')}</button></div></footer>`;
-  document.body.append(dialog);
-  const search = dialog.querySelector<HTMLInputElement>('[data-icon-search]')!;
-  const grid = dialog.querySelector<HTMLElement>('.icon-library-grid')!;
-  const counter = dialog.querySelector<HTMLElement>('[role=status]')!;
-  let tags: Record<string, string[]> = {};
-  let all = false;
-  let page = 0;
-  const pageSize = 32;
-  let results: string[] = [];
-  function renderGrid() {
-    const query = search.value.trim().toLowerCase();
-    const terms = query.split(/\s+/).filter(Boolean);
-    const synonyms = Object.entries(chineseKeywords).filter(([keys]) => terms.some(term => keys.includes(term))).flatMap(([, words]) => words.split(' '));
-    results = query ? GLINT_ICON_NAMES.filter(name => {
-      const haystack = name.replaceAll('-', ' ') + ' ' + name + ' ' + (tags[name] || []).join(' ');
-      return terms.every(term => haystack.includes(term)) || synonyms.some(term => haystack.includes(term));
-    }) : all ? GLINT_ICON_NAMES : favorites;
-    const pages = Math.max(1, Math.ceil(results.length / pageSize));
-    page = Math.max(0, Math.min(page, pages - 1));
-    grid.replaceChildren();
-    for (const name of results.slice(page * pageSize, (page + 1) * pageSize)) {
-      const button = document.createElement('button');
-      button.className = 'library-icon' + (name === iconName(current) ? ' selected' : '');
-      button.dataset.pickIcon = name; button.title = name;
-      button.setAttribute('aria-label', name);
-      button.setAttribute('aria-pressed', String(name === iconName(current)));
-      button.innerHTML = icon(name);
-      const label = document.createElement('span'); label.className = 'library-icon-name'; label.textContent = name;
-      button.append(label); grid.append(button);
-    }
-    if (!results.length) { const empty = document.createElement('p'); empty.className = 'icon-library-empty'; empty.textContent = '没有找到图标，试试英文名称或更短的关键词。'; grid.append(empty); }
-    counter.textContent = results.length + ' 个图标';
-    dialog.querySelector('[data-picker-page]')!.textContent = (page + 1) + ' / ' + pages;
-    (dialog.querySelector('[data-picker-prev]') as HTMLButtonElement).disabled = page === 0;
-    (dialog.querySelector('[data-picker-next]') as HTMLButtonElement).disabled = page === pages - 1;
-    dialog.querySelectorAll<HTMLButtonElement>('[data-icon-tab]').forEach(button => button.setAttribute('aria-pressed', String((button.dataset.iconTab === 'all') === all)));
-  }
-  search.addEventListener('input', () => { page = 0; renderGrid(); });
-  dialog.addEventListener('click', event => {
-    const button = (event.target as Element).closest<HTMLButtonElement>('button');
-    if (!button || button.disabled) return;
-    if (button.dataset.pickIcon) { onSelect(button.dataset.pickIcon); dialog.close(); }
-    else if ('pickerClose' in button.dataset) dialog.close();
-    else if (button.dataset.iconTab) { all = button.dataset.iconTab === 'all'; search.value = ''; page = 0; renderGrid(); }
-    else if ('pickerPrev' in button.dataset) { page--; renderGrid(); }
-    else if ('pickerNext' in button.dataset) { page++; renderGrid(); }
-  });
-  dialog.addEventListener('keydown', event => {
-    if (!(event.target instanceof HTMLElement) || !event.target.dataset.pickIcon) return;
-    const offset = ({ ArrowLeft: -1, ArrowRight: 1, ArrowUp: -8, ArrowDown: 8 } as Record<string, number>)[event.key];
-    if (offset === undefined) return;
-    event.preventDefault();
-    const buttons = [...grid.querySelectorAll<HTMLButtonElement>('button')];
-    buttons[Math.max(0, Math.min(buttons.length - 1, buttons.indexOf(event.target as HTMLButtonElement) + offset))]?.focus();
-  });
-  dialog.addEventListener('close', () => { dialog.remove(); document.querySelector<HTMLButtonElement>('[data-open-icon-picker]')?.focus(); });
-  renderGrid(); dialog.showModal();
-  void loadCatalog().then(data => { tags = data; if (dialog.isConnected) renderGrid(); }).catch(() => {
-    if (dialog.isConnected) counter.textContent = '索引加载失败，仍可按名称搜索';
-  });
 }

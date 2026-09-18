@@ -196,8 +196,8 @@ function createIcon(size = 256) {
 }
 function updateTray() {
   tray?.setContextMenu(Menu.buildFromTemplate([
-    { label: '打开 Glint', click: openSettings },
-    { label: settings.enabled ? '暂停划词' : '恢复划词', click: () => { settings.enabled = !settings.enabled; try { persist(settings, encryptedKey); } catch { diagnose('无法保存暂停状态。'); } configureHost(); dismissToolbar(); broadcast(); updateTray(); } },
+    { label: '打开设置', click: openSettings },
+    { label: settings.enabled ? '停止划词' : '启用划词', click: () => { settings.enabled = !settings.enabled; try { persist(settings, encryptedKey); } catch { diagnose('无法保存划词启用状态。'); } configureHost(); dismissToolbar(); broadcast(); updateTray(); } },
     { type: 'separator' }, { label: '退出', click: () => app.quit() }
   ]));
 }
@@ -374,7 +374,7 @@ else {
       }
     }
     installIPC();
-    tray = new Tray(createIcon(32)); tray.setToolTip('Glint · 选中文字，即刻行动'); tray.on('double-click', openSettings); updateTray();
+    tray = new Tray(createIcon(32)); tray.setToolTip('Glint · 选中文字，即刻行动'); tray.on('click', openSettings); updateTray();
     status.shortcutReady = registerShortcut(settings.shortcut);
     if (!status.shortcutReady) diagnose('快捷键注册失败，请在触发设置中修改。');
     startHost(); openSettings();
@@ -434,76 +434,97 @@ async function runSmoke() {
   await until(() => !setup?.isMaximized(), 'custom settings restore');
   await setup!.webContents.executeJavaScript("document.querySelector('[data-window=minimize]').click()");
   await until(() => !!setup?.isMinimized(), 'custom settings minimize');
-  openSettings();
-  await until(() => !!setup?.isVisible() && !setup.isMinimized(), 'reopen minimized settings');
+  tray!.emit('click');
+  await until(() => !!setup?.isVisible() && !setup.isMinimized(), 'tray click restores minimized settings');
   await setup!.webContents.executeJavaScript("document.querySelector('[data-window=close]').click()");
   await until(() => !setup, 'custom settings close');
   assert.ok(tray && !tray.isDestroyed(), 'closing settings keeps the tray available');
-  openSettings();
-  await until(() => !!setup?.isVisible() && !setup.webContents.isLoading(), 'reopen closed settings');
+  tray!.emit('click');
+  await until(() => !!setup?.isVisible() && !setup.webContents.isLoading(), 'tray click reopens closed settings');
   await wait(300);
   await fs.promises.writeFile(path.join(folder, 'settings.png'), (await setup!.webContents.capturePage()).toPNG());
   for (const [selector, name] of [['input[data-action-field=name]', 'input-focus-dark'], ['textarea[data-action-field=prompt]', 'textarea-focus-dark']]) {
     await setup!.webContents.executeJavaScript(`document.querySelector('${selector}').focus()`);
     await fs.promises.writeFile(path.join(folder, `${name}.png`), (await setup!.webContents.capturePage()).toPNG());
   }
-  assert.ok(await setup!.webContents.executeJavaScript("CSS.supports('appearance', 'base-select')"), 'Electron must support styled native selects');
-  await setup!.webContents.executeJavaScript("const kind = document.querySelector('select[data-action-field=kind]'); kind.focus(); kind.showPicker();", true);
-  await wait(150);
+  // React commits on the next render; each interaction waits for that commit before reading DOM.
+  const ui = async (code: string) => {
+    await setup!.webContents.executeJavaScript(code, true);
+    await wait(100);
+  };
+  const setInput = async (selector: string, value: string) => ui(`(() => {
+    const input = document.querySelector(${JSON.stringify(selector)});
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)});
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  })()`);
+  assert.ok(await setup!.webContents.executeJavaScript("!!document.querySelector('.fui-FluentProvider')"), 'official Fluent provider is mounted');
+  await ui("document.querySelector('input[data-action-field=name]').focus(); document.querySelector('input[data-action-field=name]').select()");
+  await setup!.webContents.insertText('临时动作');
+  await wait(100);
+  broadcast(); await wait(100);
+  assert.deepEqual(await setup!.webContents.executeJavaScript(`(() => {
+    const input = document.querySelector('input[data-action-field=name]');
+    return { text: input.value, focused: document.activeElement === input, caret: input.selectionStart };
+  })()`), { text: '临时动作', focused: true, caret: 4 }, 'typing and status events preserve draft, focus and caret');
+  await ui("document.querySelector('[data-revert]').click()");
+  await ui("document.querySelector('[data-action-field=kind]').focus(); document.querySelector('[data-action-field=kind]').click()");
   await fs.promises.writeFile(path.join(folder, 'dropdown-dark.png'), (await setup!.webContents.capturePage()).toPNG());
+  assert.ok(await setup!.webContents.executeJavaScript("!!document.querySelector('[role=listbox]')"), 'Fluent dropdown opens');
   for (const keyCode of ['Down', 'Return']) {
     setup!.webContents.sendInputEvent({ type: 'keyDown', keyCode });
     setup!.webContents.sendInputEvent({ type: 'keyUp', keyCode });
   }
-  await wait(150);
-  assert.equal(await setup!.webContents.executeJavaScript("document.querySelector('select[data-action-field=kind]').value"), 'copy', 'Arrow and Enter must update the action type');
-  await setup!.webContents.executeJavaScript("document.querySelector('[data-revert]').click()");
+  await wait(200);
+  assert.equal(await setup!.webContents.executeJavaScript("document.querySelector('[data-action-field=kind]').textContent"), '复制文字', 'Arrow and Enter must update the action type');
+  await ui("document.querySelector('[data-revert]').click()");
   const actionCount = settings.actions.length;
-  await setup!.webContents.executeJavaScript("document.querySelector('[data-add]').click(); document.querySelector('[data-open-icon-picker]').click();");
-  await wait(300);
+  await ui("document.querySelector('[data-add]').click()");
+  await ui("document.querySelector('[data-open-icon-picker]').focus()");
+  await ui("document.querySelector('[data-open-icon-picker]').click()");
   assert.equal(await setup!.webContents.executeJavaScript("document.querySelectorAll('[data-pick-icon]').length"), 32);
+  assert.ok(await setup!.webContents.executeJavaScript("!!document.querySelector('[role=dialog]')"), 'Fluent modal opens');
+  await ui("document.querySelector('[data-icon-tab=all]').click()");
+  const firstIcon = await setup!.webContents.executeJavaScript("document.querySelector('[data-pick-icon]').dataset.pickIcon");
+  await ui("document.querySelector('[data-picker-next]').click()");
+  assert.notEqual(await setup!.webContents.executeJavaScript("document.querySelector('[data-pick-icon]').dataset.pickIcon"), firstIcon, 'Full icon catalog paginates');
+  await ui("document.querySelector('[data-icon-tab=common]').click()");
   assert.ok(await setup!.webContents.executeJavaScript(`(() => {
-    document.querySelector('[data-icon-tab=all]').click();
-    const first = document.querySelector('[data-pick-icon]').dataset.pickIcon;
-    document.querySelector('[data-picker-next]').click();
-    const changed = document.querySelector('[data-pick-icon]').dataset.pickIcon !== first;
-    document.querySelector('[data-icon-tab=common]').click();
-    return changed;
-  })()`), 'Full icon catalog should paginate');
+    const dialog = document.querySelector('[role=dialog]');
+    return !dialog.parentElement.classList.contains('glint-provider');
+  })()`), 'portal must not inherit the full-window layout class');
   await fs.promises.writeFile(path.join(folder, 'icon-picker.png'), (await setup!.webContents.capturePage()).toPNG());
-  assert.ok(await setup!.webContents.executeJavaScript(`(() => {
-    const input = document.querySelector('[data-icon-search]');
-    input.value = '翻译'; input.dispatchEvent(new Event('input', { bubbles: true }));
-    return !!document.querySelector('[data-pick-icon="languages"]');
-  })()`), 'Chinese icon search should find translation');
+  await setInput('[data-icon-search]', '翻译');
+  assert.ok(await setup!.webContents.executeJavaScript("!!document.querySelector('[data-pick-icon=languages]')"), 'Chinese search finds translation');
   const longIcon = 'triangles-centerline-dashed-horizontal';
-  await setup!.webContents.executeJavaScript(`(() => {
-    const input = document.querySelector('[data-icon-search]');
-    input.value = '${longIcon}'; input.dispatchEvent(new Event('input', { bubbles: true }));
-    document.querySelector('[data-pick-icon="${longIcon}"]').click();
-    document.querySelector('[data-save]').click();
-  })()`);
+  await setInput('[data-icon-search]', longIcon);
+  await ui(`document.querySelector('[data-pick-icon="${longIcon}"]').click()`);
+  await wait(200);
+  assert.equal(await setup!.webContents.executeJavaScript("document.activeElement.matches('[data-open-icon-picker]') ? 'opener' : document.activeElement.outerHTML.slice(0, 1000)"), 'opener', 'Dialog restores focus to its opener');
+  await ui("document.querySelector('[data-save]').click()");
   await until(() => settings.actions.length === actionCount + 1 && settings.actions.at(-1)?.icon === longIcon, 'new action icon save');
+  assert.ok(await setup!.webContents.executeJavaScript(`(() => {
+    const input = document.querySelector('input[data-action-field=name]');
+    const rect = input.getBoundingClientRect();
+    return document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2) === input;
+  })()`), 'toast and closed dialog must not cover the settings form');
   assert.equal(JSON.parse(fs.readFileSync(configPath, 'utf8')).settings.actions.at(-1).icon, longIcon);
-  await wait(100);
-  await setup!.webContents.executeJavaScript("document.querySelector('[data-delete]').click(); document.querySelector('[data-save]').click();");
+  await ui("document.querySelector('[data-delete]').click()");
+  await ui("document.querySelector('[data-save]').click()");
   await until(() => settings.actions.length === actionCount, 'remove temporary action');
-  await wait(100);
-  await setup!.webContents.executeJavaScript("document.querySelector('[data-page=appearance]').click(); document.querySelector('[data-theme=light]').click();");
+  await ui("document.querySelector('[data-page=appearance]').click()");
+  await ui("document.querySelector('[data-theme=light]').click()");
   for (const tab of ['actions', 'model', 'triggers', 'appearance']) {
-    await setup!.webContents.executeJavaScript(`document.querySelector('[data-page=${tab}]').click()`);
-    await wait(100);
+    await ui(`document.querySelector('[data-page=${tab}]').click()`);
     await fs.promises.writeFile(path.join(folder, `${tab}-light.png`), (await setup!.webContents.capturePage()).toPNG());
     if (tab === 'actions') {
-      await setup!.webContents.executeJavaScript("document.querySelector('input[data-action-field=name]').focus()");
+      await ui("document.querySelector('input[data-action-field=name]').focus()");
       await fs.promises.writeFile(path.join(folder, 'input-focus-light.png'), (await setup!.webContents.capturePage()).toPNG());
-      await setup!.webContents.executeJavaScript("document.querySelector('select[data-action-field=kind]').showPicker()", true);
-      await wait(150);
+      await ui("document.querySelector('[data-action-field=kind]').focus(); document.querySelector('[data-action-field=kind]').click()");
       await fs.promises.writeFile(path.join(folder, 'dropdown-light.png'), (await setup!.webContents.capturePage()).toPNG());
       setup!.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
       setup!.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
-      await wait(60);
-      assert.equal(await setup!.webContents.executeJavaScript("document.querySelector('select').matches(':open')"), false, 'Escape must close the dropdown');
+      await wait(200);
+      assert.equal(await setup!.webContents.executeJavaScript("document.querySelector('[data-action-field=kind]').getAttribute('aria-expanded')"), 'false', 'Escape closes Fluent dropdown');
     }
   }
   setup!.setSize(820, 570);
@@ -511,6 +532,27 @@ async function runSmoke() {
   await wait(100);
   await fs.promises.writeFile(path.join(folder, 'settings-small.png'), (await setup!.webContents.capturePage()).toPNG());
   setup!.setSize(920, 640);
+  await ui("document.querySelector('[data-page=triggers]').click()");
+  const fallbackBefore = await setup!.webContents.executeJavaScript("document.querySelector('input[data-field=clipboardFallback]').checked");
+  await ui("document.querySelector('input[data-field=clipboardFallback]').click()");
+  assert.equal(await setup!.webContents.executeJavaScript("document.querySelector('input[data-field=clipboardFallback]').checked"), !fallbackBefore, 'Fluent switch updates the draft');
+  await ui("document.querySelector('[data-revert]').click()");
+  assert.equal(await setup!.webContents.executeJavaScript("document.querySelector('input[data-field=clipboardFallback]').checked"), fallbackBefore, 'revert restores switch state');
+  // Check real Web Animations API durations under both operating-system preferences.
+  setup!.webContents.debugger.attach('1.3');
+  try {
+    for (const preference of ['no-preference', 'reduce']) {
+      await setup!.webContents.debugger.sendCommand('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-reduced-motion', value: preference }] });
+      await wait(50);
+      const durations = await setup!.webContents.executeJavaScript(`(async () => {
+        document.querySelector('[data-page=${preference === 'reduce' ? 'actions' : 'model'}]').click();
+        await new Promise(requestAnimationFrame);
+        return document.querySelector('.page-content [role=tabpanel]').getAnimations().map(animation => animation.effect.getTiming().duration);
+      })()`);
+      if (preference === 'no-preference') assert.ok(durations.some((duration: number) => duration > 0), 'page transitions use Fluent motion');
+      else assert.ok(durations.every((duration: number) => duration <= 1), 'reduced-motion preference uses Fluent minimal-duration transitions');
+    }
+  } finally { setup!.webContents.debugger.detach(); }
   await setup!.webContents.executeJavaScript("document.querySelector('[data-revert]').click()");
   await wait(250);
   const fixtureText = 'Glint native selection fixture';
@@ -616,6 +658,11 @@ async function runSmoke() {
     assert.equal(resultLayout.settingsButtons, 0);
     assert.equal(resultLayout.draggable, 'drag');
     assert.equal(resultLayout.closeClickable, 'no-drag');
+    await resultWindow!.webContents.executeJavaScript("document.querySelector('.source-details button').click()");
+    await wait(250);
+    assert.equal(await resultWindow!.webContents.executeJavaScript("document.querySelector('#source-text').textContent"), result!.source, 'Fluent collapse reveals the original text');
+    await resultWindow!.webContents.executeJavaScript("document.querySelector('.source-details button').click()");
+    await wait(250);
     await fs.promises.writeFile(path.join(folder, 'result.png'), (await resultWindow!.webContents.capturePage()).toPNG());
     settings.theme = 'light'; broadcast(); await wait(100);
     await fs.promises.writeFile(path.join(folder, 'result-light.png'), (await resultWindow!.webContents.capturePage()).toPNG());

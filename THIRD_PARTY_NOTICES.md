@@ -11,6 +11,13 @@ Glint's original code and brand artwork are licensed under MIT. Third-party comp
 | [node-addon-api](https://github.com/nodejs/node-addon-api) | MIT | Native addon support for selection-hook |
 | [node-gyp-build](https://github.com/prebuild/node-gyp-build) | MIT | Native addon loader |
 | [Lucide](https://github.com/lucide-icons/lucide) | ISC and notices included in its full LICENSE | Controls and action icons |
+| [React / React DOM](https://github.com/facebook/react) | MIT | Renderer components and state updates |
+| [Fluent UI React v9](https://github.com/microsoft/fluentui) | MIT | Controls, themes, accessibility and motion |
+| [Griffel](https://github.com/microsoft/griffel) | MIT | Fluent UI runtime styles |
+
+Frontend dependencies are bundled into the renderer. The build reads its bundle manifest and copies the full licenses of included packages (including transitive dependencies) to `dist/licenses/frontend/`, together with their exact versions in `dependencies.json`.
+
+Fluent's built-in controls also use Fluent System Icons (MIT). The `@fluentui/react-icons@2.0.341` npm archive omits its license, so `third_party/fluentui-system-icons-LICENSE` preserves the upstream text at the package's git revision [`2e4da95009de778ae0f41ec6c17bc67c97f4dc56`](https://github.com/microsoft/fluentui-system-icons/blob/2e4da95009de778ae0f41ec6c17bc67c97f4dc56/LICENSE). Glint's action catalog remains Lucide.
 
 The build copies full license texts into `dist/licenses/`, including Electron's `LICENSES.chromium.html`. Retain this directory when distributing built files. An eventual installer must also preserve the notices shipped with Electron and any additional dependencies it includes; `dist/` alone is not a runnable distribution.
 

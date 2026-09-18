@@ -74,6 +74,6 @@ The app interface is currently Chinese. Other platforms, ARM64, OCR, in-place re
 
 ## Open source
 
-Glint is [MIT licensed](LICENSE). Thanks to [selection-hook](https://github.com/0xfullex/selection-hook), [Electron](https://github.com/electron/electron) and [Lucide](https://lucide.dev). Cherry Studio informed selection architecture decisions; see [implementation references](docs/REFERENCES.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
+Glint is [MIT licensed](LICENSE). Thanks to [selection-hook](https://github.com/0xfullex/selection-hook), [Electron](https://github.com/electron/electron), [Fluent UI](https://github.com/microsoft/fluentui), [React](https://react.dev) and [Lucide](https://lucide.dev). Cherry Studio informed selection architecture decisions; see [implementation references](docs/REFERENCES.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
 
 To contribute, read [CONTRIBUTING](CONTRIBUTING.md). For security issues, see [SECURITY](SECURITY.md).

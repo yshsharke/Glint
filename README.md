@@ -74,6 +74,6 @@ API Key 使用 Windows 系统保护加密保存；手动记录的原文和结果
 
 ## 开源与致谢
 
-Glint 采用 [MIT 许可证](LICENSE)。感谢 [selection-hook](https://github.com/0xfullex/selection-hook)、[Electron](https://github.com/electron/electron) 和 [Lucide](https://lucide.dev)；划词架构参考了 Cherry Studio 的思路，详见 [参考记录](docs/REFERENCES.md) 和 [第三方声明](THIRD_PARTY_NOTICES.md)。
+Glint 采用 [MIT 许可证](LICENSE)。感谢 [selection-hook](https://github.com/0xfullex/selection-hook)、[Electron](https://github.com/electron/electron)、[Fluent UI](https://github.com/microsoft/fluentui)、[React](https://react.dev) 和 [Lucide](https://lucide.dev)；划词架构参考了 Cherry Studio 的思路，详见 [参考记录](docs/REFERENCES.md) 和 [第三方声明](THIRD_PARTY_NOTICES.md)。
 
 想参与开发？请阅读 [贡献指南](CONTRIBUTING.md)。安全问题请查看 [安全报告说明](SECURITY.md)。

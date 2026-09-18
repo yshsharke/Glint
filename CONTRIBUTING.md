@@ -45,6 +45,8 @@ npm run smoke:packaged
 
 ## 设计边界
 
+界面使用 React 与官方 Fluent UI React v9（`src/renderer.tsx`）。CSS 主要负责 Glint 的紧凑布局；控件交互、焦点和主题使用 Fluent，避免重新模拟原生控件。额外的官方动效预设集中在 `src/ui/motion.ts`，其 preview 依赖固定版本，升级时需要检查。前端库作为构建依赖打入 `dist/renderer.js`，不额外分发完整的前端 `node_modules`。
+
 - 原生取词留在 utility process 中，避免 UIA 阻塞主线程。
 - 渲染进程保持 sandbox、context isolation 和最小 preload 接口。
 - 凭据、模型请求和数据库由主进程管理；日志不含密钥、原文或模型回复。
