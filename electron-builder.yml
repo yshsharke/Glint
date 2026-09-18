@@ -1,0 +1,44 @@
+appId: com.yshsharke.glint
+productName: Glint
+copyright: Copyright © 2026 Glint contributors
+directories:
+  output: release
+asar: true
+npmRebuild: false
+files:
+  - dist/**/*
+  - '!dist/**/*.map'
+  - package.json
+  - LICENSE
+  - THIRD_PARTY_NOTICES.md
+  - '!node_modules/selection-hook/prebuilds/{darwin-*,linux-*,win32-arm64}/**'
+asarUnpack:
+  - node_modules/selection-hook/**
+  - node_modules/node-gyp-build/**
+win:
+  executableName: Glint
+  icon: dist/brand/glint.ico
+  requestedExecutionLevel: asInvoker
+  signExecutable: false
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+nsis:
+  artifactName: Glint-${version}-windows-${arch}-setup.${ext}
+  oneClick: false
+  perMachine: false
+  allowElevation: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: false
+  createStartMenuShortcut: true
+  shortcutName: Glint
+  deleteAppDataOnUninstall: false
+  runAfterFinish: true
+  installerLanguages: [en_US, zh_CN]
+  displayLanguageSelector: true
+portable:
+  artifactName: Glint-${version}-windows-${arch}-portable.${ext}
+  requestExecutionLevel: user
+  unpackDirName: false

@@ -22,8 +22,12 @@ The build copies full license texts into `dist/licenses/`, including Electron's 
 | [esbuild](https://github.com/evanw/esbuild) | MIT | Bundling |
 | [TypeScript](https://github.com/microsoft/TypeScript) | Apache-2.0 | Type checking |
 | [Node.js type definitions](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT | Development types |
+| [electron-builder](https://github.com/electron-userland/electron-builder) | MIT | Windows installer and portable packaging |
+| [Electron ASAR](https://github.com/electron/asar) | MIT | Packaged archive verification |
 
 These tools are installed by npm and are not copied into Glint's renderer bundle. Their license texts accompany the installed packages. Node.js/Electron also include additional third-party notices in their distributions.
+
+The Windows setup and portable launchers are generated with NSIS. NSIS permits generated installers to be distributed under terms of the author's choice; see [NSIS license](https://nsis.sourceforge.io/License). This project uses the unmodified NSIS binaries supplied by electron-builder, rather than redistributing its compiler as part of the app.
 
 ## Implementation references
 

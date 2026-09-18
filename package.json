@@ -4,7 +4,18 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "engines": { "node": "24.x" },
+  "author": "Glint contributors",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yshsharke/Glint.git"
+  },
+  "homepage": "https://github.com/yshsharke/Glint#readme",
+  "bugs": {
+    "url": "https://github.com/yshsharke/Glint/issues"
+  },
+  "engines": {
+    "node": "24.x"
+  },
   "description": "A small, customizable selection assistant for Windows.",
   "main": "dist/main.cjs",
   "scripts": {
@@ -15,15 +26,21 @@
     "typecheck": "tsc --noEmit",
     "test": "node scripts/test.mjs",
     "check": "npm run typecheck && npm test && npm run build",
-    "smoke": "npm run build && node scripts/launch.mjs --smoke"
+    "smoke": "npm run build && node scripts/launch.mjs --smoke",
+    "package": "npm run build && electron-builder --win --x64 --publish never && node scripts/checksums.mjs",
+    "package:verify": "node scripts/verify-package.mjs",
+    "package:verify-installer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-installer.ps1",
+    "smoke:packaged": "node scripts/verify-package.mjs --smoke"
   },
   "dependencies": {
     "selection-hook": "2.1.1"
   },
   "devDependencies": {
+    "@electron/asar": "3.4.1",
     "@resvg/resvg-js": "2.6.2",
     "@types/node": "^24.0.0",
     "electron": "44.4.2",
+    "electron-builder": "26.15.3",
     "esbuild": "0.28.2",
     "lucide-static": "1.47.0",
     "typescript": "5.9.3"

@@ -1,25 +1,42 @@
-# 发布检查
+# 发布流程
 
-当前目标是发布可自行运行的源码预览。`dist/` 只是构建输出，依赖 Electron 和外部原生模块，不能直接当作便携版或安装包发布。
+仓库：https://github.com/yshsharke/Glint 。发布物为 Windows x64 安装版、portable 和 `SHA256SUMS.txt`。当前为未签名预览版本，不提供自动更新。
 
-## 第一次公开仓库
+## 本地验证
 
-1. 创建空 GitHub 仓库，避免额外生成与本地冲突的 README/LICENSE。确认公开的仓库名称和维护者身份，再添加真实 remote；不要在文档中填虚构地址。
-2. 检查 `git status --short` 和 `git ls-files --cached --others --exclude-standard`。源码、文档和锁文件应包括在内；`work/`、`dist/`、`node_modules/`、配置、日志和数据库应排除。忽略规则不会移除已经提交过的敏感文件；若曾泄漏密钥，应撤销密钥并清理历史。
-3. 使用 GitHub 仓库预期的实际地址更新 `package.json` 的 repository、bugs 和 homepage 信息；当前尚未配置这些字段。
-4. 在干净目录按 README 执行 `npm ci`、`npm run setup:electron`、`npm run check`，在交互式 Windows 桌面执行 `npm run smoke`；再用无敏感信息的第三方应用文字验证真实取词。
-5. 审阅提交内容，创建首个提交并推送。确认 GitHub 的 `Windows checks` 成功后，再设为默认分支保护的必需检查。
-6. 启用 GitHub Private Vulnerability Reporting、Dependabot alerts 和可用的 secret scanning/push protection。仓库设置需要仓库维护权限，源码文件不会自动开启这些功能。
+```powershell
+npm ci
+npm run setup:electron
+npm run check
+npm run package
+npm run package:verify
+npm run package:verify-installer
+npm run smoke:packaged
+```
 
-## 后续版本
+- `release/Glint-<version>-windows-x64-setup.exe`：当前用户安装，可选择目录，创建开始菜单入口，支持卸载。
+- `release/Glint-<version>-windows-x64-portable.exe`：单文件免安装启动器，运行时解压到临时目录；配置与数据仍在 AppData。
+- `release/SHA256SUMS.txt`：两份下载文件的 SHA-256。
+- `release/win-unpacked/`：用于调试的完整应用目录，不上传到源码仓库。`dist/` 单独不能运行。
 
-- 同步 `package.json`、`package-lock.json` 和 CHANGELOG 版本；将“待发布”替换为实际发布日期。
-- 检查 `npm audit`，评估依赖升级，不运行未经审阅的 `npm audit fix --force`。
-- 执行完整验证，检查旧数据库迁移和记录内容，发布截图只用演示数据。
-- 审核 `THIRD_PARTY_NOTICES.md` 和 `dist/licenses/`。新增运行时依赖后更新构建的许可证收集列表，保留完整版权及第三方声明。
-- 依赖和 GitHub Actions 更新由 Dependabot 提出 PR，经过检查和审阅再合并。
-- 创建与实际发布版本一致的 tag 和 GitHub Release，说明已验证平台及已知限制。
+构建只包含白名单应用资源、生产依赖和许可；selection-hook 的 Windows x64 原生模块放在 `app.asar.unpacked`，不要改成随意打包整个项目目录。默认关闭代码签名，保留 exe 图标和版本信息。
 
-## 提供安装包之前
+`package:verify` 检查归档、原生模块和许可，并分别启动应用与 portable，确认引擎、preload 接口及 SQLite 可用。这项启动检查不要求 UIA 文本选区；完整的 `smoke:packaged` 需在交互式桌面执行，存在已记录的间歇性 UIA 失败，不能把启动检查当成全面兼容性测试。
 
-另外实现并验证打包流程：包含 selection-hook 预编译模块并正确处理原生文件、Electron/Chromium 许可、应用图标、升级及卸载行为。测试全新 Windows 用户环境，决定代码签名方式并记录签名状态。当前仓库没有自动上传 Release、安装包或签名流程。
+## GitHub Release
+
+1. 确认 `package.json` 和锁文件版本一致，更新 CHANGELOG 与 `docs/releases/<version>.md`，同步中英文 README。
+2. 完成本地验证，检查 `npm audit`、第三方许可和提交内容；不提交生成文件、个人数据和签名凭据。
+3. 提交并推送代码，再创建对应的 `v<version>` 标签并推送该标签。不要移动已经公开发布的标签。
+4. `Release` workflow 会在 Windows 构建、验证打包应用，上传构建产物；随后核对 SHA-256，建立包含两个 exe 与校验文件的 GitHub 预览 Release。标签必须与 package.json 的版本一致。
+5. 验证 GitHub Release 三份附件均可下载，README 的 Releases 链接可访问。手动下载后，可用 `Get-FileHash <文件> -Algorithm SHA256` 对照校验值。
+
+手动运行 Release workflow 且选择 `main` 时，只构建并保留 Actions artifacts，不创建公开 Release。选择版本标签会进入发布流程。发布任务使用 GitHub 内置令牌，只有发布任务获得 `contents: write`；不需要个人访问令牌。
+
+若上传中断而留下草稿，先确认该 tag 没有公开版本，再由维护者处理草稿和重新运行；流程不会自动覆盖已发布的附件。当前每个版本均标记为 prerelease，准备稳定版时需明确修改此策略。
+
+## 维护
+
+保留 `dist/licenses/` 及 Electron 原有的 LICENSE/Chromium 声明。新增运行依赖要更新许可证收集和归档验证。安装版与 portable 使用相同的应用 ID 和 AppData 路径；更改它们前需设计迁移，卸载默认保留用户数据。
+
+启用仓库的私密漏洞报告、Dependabot alerts，以及可用的 secret scanning/push protection；这些设置不能单靠提交文件开启。新功能发布前补充第三方应用取词检查，签名、ARM64 和自动更新属于后续工作。

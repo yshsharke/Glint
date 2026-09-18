@@ -12,16 +12,22 @@ import type { TextSelectionData } from 'selection-hook';
 import { defaults, endpoint, modelErrorMessage, placeToolbar, readSSE, recordKind, validateSettings } from './core';
 import type { RecordKind, ResultState, Selection, Settings, Snapshot, Status, UIEvent } from './core';
 
-const smoke = process.argv.includes('--smoke');
+const packageCheck = process.argv.includes('--package-check');
+const smoke = process.argv.includes('--smoke') || packageCheck;
 const root = app.getAppPath();
+// An installed app lives in a read-only ASAR. Test profiles must remain writable
+// and separate from the real user's AppData, including portable launches.
+const testRoot = smoke ? (process.env.GLINT_SMOKE_ROOT
+  ? path.resolve(process.env.GLINT_SMOKE_ROOT)
+  : app.isPackaged ? path.join(app.getPath('temp'), 'Glint-smoke', randomUUID()) : root) : root;
 app.setName('Glint');
-if (process.platform === 'win32') app.setAppUserModelId('Glint');
-app.setPath('userData', smoke ? path.join(root, 'work', 'smoke-profile') : path.join(app.getPath('appData'), 'Glint'));
+if (process.platform === 'win32') app.setAppUserModelId('com.yshsharke.glint');
+app.setPath('userData', smoke ? path.join(testRoot, 'work', 'smoke-profile') : path.join(app.getPath('appData'), 'Glint'));
 if (smoke) app.commandLine.appendSwitch('force-renderer-accessibility');
 const page = path.join(__dirname, 'index.html');
 const preload = path.join(__dirname, 'preload.cjs');
 const configPath = path.join(app.getPath('userData'), 'settings.json');
-const paths = runtimePaths(root, process.env.LOCALAPPDATA || path.join(app.getPath('home'), 'AppData', 'Local'), smoke);
+const paths = runtimePaths(testRoot, process.env.LOCALAPPDATA || path.join(app.getPath('home'), 'AppData', 'Local'), smoke);
 const recordsFolder = paths.data;
 let logger: AppLogger | undefined;
 const recordsPaths: Record<RecordKind, string> = {
@@ -373,17 +379,36 @@ else {
     if (!status.shortcutReady) diagnose('快捷键注册失败，请在触发设置中修改。');
     startHost(); openSettings();
     if (smoke) {
-      try { await runSmoke(); quitting = true; host?.kill(); app.exit(0); }
-      catch (error) { console.error(error); fs.mkdirSync(path.join(root, 'work'), { recursive: true }); fs.writeFileSync(path.join(root, 'work', 'smoke-error.txt'), String(error)); quitting = true; host?.kill(); app.exit(1); }
+      try {
+        if (packageCheck) await runPackageCheck(); else await runSmoke();
+        fs.mkdirSync(path.join(testRoot, 'work'), { recursive: true });
+        fs.writeFileSync(path.join(testRoot, 'work', 'smoke-success.json'), JSON.stringify({ packaged: app.isPackaged, check: packageCheck ? 'startup' : 'full', version: app.getVersion() }));
+        quitting = true; closeRecordStores(); host?.kill(); app.exit(0);
+      }
+      catch (error) { console.error(error); fs.mkdirSync(path.join(testRoot, 'work'), { recursive: true }); fs.writeFileSync(path.join(testRoot, 'work', 'smoke-error.txt'), String(error)); quitting = true; host?.kill(); app.exit(1); }
       finally { host?.kill(); }
     }
   }).catch(error => { logger?.write('app.start-failed', { code: errorCode(error) }); console.error(error); app.exit(1); });
 }
 
+async function runPackageCheck() {
+  assert.equal(app.isPackaged, true, 'Must test a packaged executable');
+  const deadline = Date.now() + 15000;
+  while (status.hook === 'starting' || !setup || setup.webContents.isLoading()) {
+    if (Date.now() > deadline) throw new Error('Packaged startup timed out');
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  assert.equal(status.hook, 'ready', status.message);
+  assert.equal(await setup.webContents.executeJavaScript("typeof window.glint.save"), 'function');
+  assert.equal(await setup.webContents.executeJavaScript("!!document.querySelector('[data-page=actions]')"), true);
+  for (const file of Object.values(recordsPaths)) assert.ok(fs.existsSync(file), 'Packaged SQLite initialization');
+  assert.ok(!paths.data.startsWith(root), 'Packaged test data must be outside ASAR');
+}
+
 async function runSmoke() {
   const wait = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
   const until = async (condition: () => boolean, description: string) => { const end = Date.now() + 15000; while (!condition()) { if (Date.now() > end) throw new Error(`Timeout: ${description}`); await wait(60); } };
-  const folder = path.join(root, 'work'); fs.mkdirSync(folder, { recursive: true });
+  const folder = path.join(testRoot, 'work'); fs.mkdirSync(folder, { recursive: true });
   await until(() => status.hook === 'ready' || status.hook === 'error', 'native hook');
   assert.equal(status.hook, 'ready', status.message);
   await until(() => !!setup && !setup.webContents.isLoading(), 'settings page');

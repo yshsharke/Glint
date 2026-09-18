@@ -1,0 +1,79 @@
+<img src="docs/assets/glint.svg" width="64" alt="Glint">
+
+# Glint
+
+**Select text. Take action.**
+
+[简体中文](README.md) · **English**
+
+Glint is a customizable text selection assistant for Windows. Translate while reading, polish a sentence while writing, or search and copy from a compact toolbar without switching between apps.
+
+[Download Glint](https://github.com/yshsharke/Glint/releases) · [Report an issue](https://github.com/yshsharke/Glint/issues) · [Changelog](CHANGELOG.md)
+
+<img src="docs/assets/settings.png" width="760" alt="Glint settings with custom actions, prompts and toolbar preview">
+
+## Download and install
+
+For **Windows 10 / 11 x64**. Downloads include the runtime; no Node.js, Python or developer tools are required.
+
+Choose a version on [Releases](https://github.com/yshsharke/Glint/releases) and expand **Assets**:
+
+| File | Choose this to… |
+| --- | --- |
+| `Glint-VERSION-windows-x64-portable.exe` | Run without installing. Save it in a folder and double-click it. Startup briefly extracts the application. |
+| `Glint-VERSION-windows-x64-setup.exe` | Choose an installation folder, launch from the Start menu and uninstall through Windows Settings. |
+
+GitHub's **Source code** archives are for development, not ready-to-run downloads. Releases are currently unsigned previews, so Windows may display an “unknown publisher” warning. Download from this repository's Releases page; use the accompanying `SHA256SUMS.txt` to verify the file.
+
+**Portable means no installation; settings and saved records still live in the current Windows user's AppData folder. They do not travel with the exe.** Both editions share the same data, and only one Glint instance runs per user.
+
+## Get started
+
+1. Open **模型 (Model)**, enter your provider's API URL, model name and API key, then click **保存设置 (Save settings)**. Glint supports OpenAI-compatible APIs and local model services. It does not include a model subscription or API credits.
+2. Select text in another application to show the toolbar, or press **Ctrl + Alt + G** to capture the current selection.
+3. Choose **翻译 (Translate)** or **润色 (Polish)** to open a result card. Copy and search work without a model connection.
+
+Click the Glint icon on the toolbar to open settings. Closing settings keeps Glint running in the system tray. Double-click the tray icon to reopen it, or choose **退出 (Quit)** to exit completely.
+
+## Make it yours
+
+- **Your own actions.** Edit prompts and add up to 12 actions. Reorder, enable or hide them.
+- **A consistent icon library.** Browse and search the built-in Lucide icons, available offline.
+- **Control when it appears.** Use automatic selection or a keyboard shortcut, exclude specific apps and optionally enable clipboard fallback.
+- **A compact Windows-style interface.** Follow the system theme or choose light/dark, with four accent colors and two toolbar densities.
+
+Use `{text}` in an action prompt to insert the selected text. For example:
+
+> Rewrite this passage in clear, natural English. Preserve its meaning and return only the revised text: {text}
+
+## Work with the result
+
+<img src="docs/assets/result.png" width="480" alt="Translation result with Stop, Retry, Copy and Save buttons">
+
+Results stream into a separate card. Stop a response, retry it or copy it with one click. The header shows the action and source app; expand the original text to review it.
+
+The built-in Translate and Polish actions also offer **记录 (Save)** to store the original text, result and source process locally. These two categories use separate databases. Saving again after a retry updates the same record. A history browser and search interface are not yet available.
+
+## Your data
+
+Text is sent to your configured model service only when you invoke an AI action. Search opens Google in your browser. Glint contains no telemetry and does not automatically save selected text as a record.
+
+API keys are encrypted using Windows system protection. Manually saved text and results use unencrypted local SQLite databases. Settings are in `%APPDATA%\Glint`; records and logs are in `%LOCALAPPDATA%\Glint`. See the [privacy details](docs/PRIVACY.md) (Chinese).
+
+## Common questions
+
+**No toolbar after selecting text?** Try `Ctrl + Alt + G`, check excluded apps in **触发 (Triggers)** and the engine status in **诊断 (Diagnostics)**. Some PDFs, terminals, protected or elevated windows do not expose accessible text. OCR is not supported, and selection cannot be guaranteed in every app.
+
+**Model connection failed?** Check the API URL, port, model name and key. A local service may use `http://` instead of `https://`. There is no built-in proxy configuration, and Windows system proxy settings are not guaranteed to apply.
+
+**How do I update?** Download the new version manually. Quit Glint completely, then run the new installer or replace the portable exe. Settings and records remain available under the same Windows account. Automatic updates are not implemented.
+
+**How do I uninstall?** Remove the installed edition through Windows Settings. For portable, quit and delete the exe. Both retain personal data; see the [data removal instructions](docs/PRIVACY.md#删除与备份) if you also want to erase it.
+
+The app interface is currently Chinese. Other platforms, ARM64, OCR, in-place replacement and multi-turn chat are not supported yet. A resident-memory budget has not been established.
+
+## Open source
+
+Glint is [MIT licensed](LICENSE). Thanks to [selection-hook](https://github.com/0xfullex/selection-hook), [Electron](https://github.com/electron/electron) and [Lucide](https://lucide.dev). Cherry Studio informed selection architecture decisions; see [implementation references](docs/REFERENCES.md) and [third-party notices](THIRD_PARTY_NOTICES.md).
+
+To contribute, read [CONTRIBUTING](CONTRIBUTING.md). For security issues, see [SECURITY](SECURITY.md).

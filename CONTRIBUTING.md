@@ -24,6 +24,25 @@ npm run smoke
 
 `check` 包含 TypeScript 检查、核心行为测试和资源构建；GitHub Actions 在 Windows 上运行它。`smoke` 启动独立 Electron 实例，使用本地假模型和隔离配置，不依赖真实 API Key。它会打开测试窗口，截图、报告、数据库写入忽略的 `work/` 目录。运行时避免操作测试窗口；UI Automation 受桌面会话和焦点影响，失败时先查看报告，不应仅反复重试以掩盖问题。普通 CI 不运行需要交互桌面的测试。
 
+已观察到原生 UIA 受控选区读取间歇性失败，原因尚未确认；再次运行成功不代表该问题已修复。
+
+## 打包与发布
+
+```powershell
+npm run package
+npm run package:verify
+npm run package:verify-installer
+npm run smoke:packaged
+```
+
+`package` 使用 electron-builder 生成 Windows x64 安装版、单文件 portable 和 SHA-256 校验文件，输出到忽略的 `release/`。`package:verify` 检查归档内容和原生模块解包，并真实启动打包应用与 portable，验证取词引擎、沙箱接口和 SQLite 初始化，不依赖桌面选区。
+
+`smoke:packaged` 对两种启动方式执行完整桌面烟雾测试（包含 UIA、流式模型与记录流程），需要交互式 Windows 会话。测试在 `work/packaged-check-*` 下使用隔离配置；不会写入真实用户资料。更多内容见 [发布流程](docs/RELEASING.md)。
+
+`package:verify-installer` 临时安装到 `work/installer-check-*`，验证开始菜单入口与应用启动后卸载，检查注册项清理。它会暂时添加当前用户的安装注册项和快捷方式，因此检测到已有安装版 Glint 时会拒绝运行；可使用干净 Windows 用户或 GitHub 的临时 runner。
+
+`README.md` 和 `README.en.md` 面向产品用户，功能和下载说明应同步更新。源码构建、测试和内部结构说明放在本文件及 `docs/`。界面目前仍为中文，README 切换不改变界面语言。
+
 ## 设计边界
 
 - 原生取词留在 utility process 中，避免 UIA 阻塞主线程。

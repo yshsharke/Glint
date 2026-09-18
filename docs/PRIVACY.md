@@ -11,6 +11,8 @@ Glint 不包含分析统计、遥测或自动更新服务。原生引擎监听�
 
 ## 存储
 
+安装版和 portable 共用下面的 AppData 位置。Portable 只免去安装步骤，运行时的临时解压目录不保存用户记录；配置、密钥和数据库不会随 exe 一起迁移。卸载安装版或删除 portable exe 默认保留用户数据。
+
 | 位置 | 内容 |
 | --- | --- |
 | `%APPDATA%\Glint\settings.json` | 动作、模型地址、模型名称等配置，及 Windows safeStorage 加密的 API Key |
