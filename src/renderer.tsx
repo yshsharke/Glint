@@ -8,6 +8,7 @@ import {
   type BrandVariants,
 } from '@fluentui/react-components';
 import { FadeSnappy, CollapseSnappy } from './ui/motion';
+import { History } from './ui/History';
 import { iconName, findIcons, loadCatalog, iconCount } from './icons';
 import type { Action, GlintAPI, ResultState, Settings, Snapshot } from './core';
 
@@ -31,10 +32,11 @@ function edit(change: () => void) { change(); dirty = true; emit(); }
 async function perform(action: () => Promise<unknown>) {
   try { await action(); } catch (error) { toast(error instanceof Error ? error.message : '操作失败', true); }
 }
-const kindLabel = (kind: string) => ({ ai: 'AI 指令', copy: '复制文字', search: '网页搜索' })[kind] || kind;
+const kindLabel = (kind: string) => ({ ai: '指令', search: '搜索' })[kind] || kind;
 const pages = [
   { id: 'actions', title: '动作', icon: 'sparkles' }, { id: 'model', title: '模型', icon: 'link' },
   { id: 'triggers', title: '触发', icon: 'zap' }, { id: 'appearance', title: '外观', icon: 'palette' },
+  { id: 'history', title: '历史', icon: 'book' },
   { id: 'diagnostics', title: '诊断', icon: 'activity' },
 ];
 const ramps: Record<Settings['accent'], string[]> = {
@@ -169,7 +171,7 @@ function Actions() {
     <div className="section-heading"><span className="section-summary">{draft.actions.length} 个动作 · 选择后编辑</span><div className="heading-buttons">
       <Button size="small" data-demo onClick={() => void perform(() => window.glint.demo())}>测试浮条</Button>
       <Button size="small" data-add icon={<Icon name="plus" />} disabled={draft.actions.length >= 12} onClick={() => edit(() => {
-        const action: Action = { id: crypto.randomUUID(), name: '新动作', icon: 'sparkles', kind: 'ai', enabled: true, prompt: '请处理以下文字：\n\n{text}' };
+        const action: Action = { id: crypto.randomUUID(), name: '新动作', englishName: '', icon: 'sparkles', kind: 'ai', enabled: true, prompt: '请处理以下文字：\n\n{text}' };
         draft.actions.push(action); selectedId = action.id;
       })}>新建动作</Button>
     </div></div>
@@ -189,15 +191,21 @@ function Actions() {
         onClick={() => edit(() => { draft.actions = draft.actions.filter(a => a.id !== selected.id); selectedId = draft.actions[0].id; })} />
     </div></div>
     <div className="form-grid">
-      <Field label="动作名称"><Input value={selected.name} maxLength={20} input={controlData({ 'data-action-field': 'name' })} onChange={(_, data) => edit(() => { selected.name = data.value; })} /></Field>
+      <Field label="显示名称"><Input value={selected.name} maxLength={20} input={controlData({ 'data-action-field': 'name' })} onChange={(_, data) => edit(() => { selected.name = data.value; })} /></Field>
       <Field label="动作图标"><IconPicker action={selected} /></Field>
-      <Select label="动作类型" actionField="kind" value={selected.kind} options={['ai', 'copy', 'search'].map(kind => [kind, kindLabel(kind)])}
+      <Select label="动作类型" actionField="kind" value={selected.kind} options={['ai', 'search'].map(kind => [kind, kindLabel(kind)])}
         onChange={value => edit(() => { selected.kind = value as Action['kind']; if (value === 'ai' && !selected.prompt) selected.prompt = '{text}'; })} />
     </div>
+    {!snapshot.settings.actions.some(action => action.id === selected.id) && <Field label="英文名称" className="form-field"
+      hint="小写字母开头，可含数字和下划线，例如 summary；首次保存后固定。">
+      <Input value={selected.englishName} maxLength={48} spellCheck={false}
+        placeholder="例如 summary" input={controlData({ 'data-action-field': 'englishName' })}
+        onChange={(_, data) => edit(() => { selected.englishName = data.value; })} />
+    </Field>}
     {selected.kind === 'ai' ? <Field label="提示词" className="form-field" hint="{text} = 选中的文字 · 使用「模型」中的模型">
       <Textarea value={selected.prompt} rows={4} maxLength={12000} resize="vertical" spellCheck={false}
         textarea={controlData({ 'data-action-field': 'prompt' })} onChange={(_, data) => edit(() => { selected.prompt = data.value; })} />
-    </Field> : <div className="action-description"><Icon name={selected.icon} /><p>{selected.kind === 'copy' ? '将当前选中的文字复制到剪贴板，然后收起浮条。' : '使用 Google 搜索选中文字，在默认浏览器中打开。'}</p></div>}
+    </Field> : <div className="action-description"><Icon name={selected.icon} /><p>使用 Google 搜索选中文字，在默认浏览器中打开。</p></div>}
     </div></div>
     <div className="inline-preview"><span>浮条预览</span><Toolbar settings={draft} /></div>
   </>;
@@ -211,7 +219,7 @@ function Model() {
       placeholder={snapshot.hasKey && keyUpdate === undefined ? '已保存密钥 · 留空保留原密钥' : '粘贴你的 API Key'}
       onChange={(_, data) => edit(() => { keyUpdate = data.value || undefined; })} /></Field>
     <div className="key-note"><span><Icon name="check" /> 密钥使用 Windows 系统加密后保存在本机</span>{snapshot.hasKey && <Button appearance="transparent" size="small" data-clear-key onClick={() => { edit(() => { keyUpdate = ''; }); toast('保存设置后将清除密钥。'); }}>清除已保存密钥</Button>}</div>
-  </section><div className="quiet-note"><Icon name="sparkles" /><p>只有点击 AI 动作时，选中文字才会发送到这里配置的服务。复制与搜索不调用模型。</p></div></>;
+  </section><div className="quiet-note"><Icon name="sparkles" /><p>只有执行指令时，选中文字才会发送到这里配置的服务。搜索不调用模型。</p></div></>;
 }
 function Triggers() {
   const [apps, setApps] = useState(draft.excludedApps.join('\n'));
@@ -247,6 +255,13 @@ function Diagnostics() {
     <div className="quiet-note"><Icon name="activity" /><p>没有弹出浮条时，可先尝试快捷键，再检查应用排除列表。图片和扫描版 PDF 尚不支持。</p></div></>;
 }
 let resetVersion = 0;
+function HistoryPage() {
+  const actions = snapshot.settings.actions.map(action => {
+    const editing = draft.actions.find(item => item.id === action.id);
+    return { ...action, name: editing?.name || action.name, icon: editing?.icon || action.icon };
+  });
+  return <History actions={actions} api={window.glint} notify={toast} />;
+}
 async function save() {
   if (busy) return;
   busy = true; emit();
@@ -260,7 +275,7 @@ async function save() {
 }
 function SettingsView() {
   const current = pages.find(p => p.id === page)!;
-  const Contents = ({ actions: Actions, model: Model, triggers: Triggers, appearance: Appearance, diagnostics: Diagnostics })[page]!;
+  const Contents = ({ actions: Actions, model: Model, triggers: Triggers, appearance: Appearance, history: HistoryPage, diagnostics: Diagnostics })[page]!;
   return <div className={'app-shell ' + (snapshot.settingsMaximized ? 'maximized' : '')}>
     <header className="settings-titlebar"><div className="brand"><Brand /><span className="brand-wordmark"><span>Glint</span><small className="version-label">{GLINT_APP_VERSION}</small></span></div><h1>{current.title}</h1>
       <span id="engine-status" className="status-badge" data-state={snapshot.status.hook}><i /><span>{({ starting: '正在连接', ready: '划词已就绪', paused: '已暂停', error: '需要检查' })[snapshot.status.hook]}</span></span>
@@ -273,8 +288,8 @@ function SettingsView() {
     <aside className="sidebar"><TabList vertical size="small" selectedValue={page} onTabSelect={(_, data) => { page = String(data.value); emit(); }} aria-label="设置导航">
       {pages.map(p => <Tab key={p.id} value={p.id} data-page={p.id} icon={<Icon name={p.icon} />}>{p.title}</Tab>)}
     </TabList><div className="sidebar-bottom"><Button appearance="subtle" size="small" className="quit-button" data-quit icon={<Icon name="power" />} onClick={() => void perform(() => window.glint.quit())}>退出 Glint</Button></div></aside>
-    <main className="workspace"><div className={'page-content' + (page === 'diagnostics' ? ' diagnostics-page' : '')} inert={busy}>
-      <FadeSnappy.In key={page + resetVersion}><div role="tabpanel" aria-label={current.title}><Contents /></div></FadeSnappy.In>
+    <main className="workspace"><div className={'page-content' + (page === 'diagnostics' ? ' diagnostics-page' : page === 'history' ? ' history-page' : '')} inert={busy}>
+      <FadeSnappy.In key={page === 'history' ? page : page + resetVersion}><div role="tabpanel" aria-label={current.title}><Contents /></div></FadeSnappy.In>
     </div><footer className="save-bar"><span id="save-note">{dirty ? '有尚未保存的更改' : '设置保存在本机'}</span><div>
       <Button data-revert disabled={!dirty || busy} onClick={() => { draft = structuredClone(snapshot.settings); keyUpdate = undefined; dirty = false; resetVersion++; emit(); }}>撤销更改</Button>
       <Button appearance="primary" data-save disabled={busy} icon={busy ? <Spinner size="tiny" /> : <Icon name="check" />} onClick={() => void perform(save)}>{busy ? '保存中…' : '保存设置'}</Button>

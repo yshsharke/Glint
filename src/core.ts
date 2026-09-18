@@ -1,5 +1,5 @@
-export type ActionKind = 'ai' | 'copy' | 'search';
-export interface Action { id: string; name: string; icon: string; kind: ActionKind; prompt: string; enabled: boolean }
+export type ActionKind = 'ai' | 'search';
+export interface Action { id: string; name: string; englishName: string; icon: string; kind: ActionKind; prompt: string; enabled: boolean }
 export interface Settings {
   version: 1;
   enabled: boolean;
@@ -17,13 +17,30 @@ export interface Selection { id: number; text: string; app: string; method: stri
 export interface Diagnostic { time: string; message: string }
 export interface Status { hook: 'starting' | 'ready' | 'paused' | 'error'; message: string; shortcutReady: boolean; lastSelection?: { app: string; method: string; length: number }; events: Diagnostic[] }
 export interface Snapshot { settings: Settings; hasKey: boolean; status: Status; selection?: Selection; result?: ResultState; settingsMaximized: boolean }
-export type RecordKind = 'translation' | 'polishing';
+export type RecordKind = string;
+export interface RecordSummary { id: string; preview: string; processName: string; createdAt: string }
+export interface SavedRecord { id: string; originalText: string; resultText: string; processName: string; createdAt: string }
+export interface RecordPage { items: RecordSummary[]; total: number; page: number; pageSize: number }
 export function recordKind(action: Action): RecordKind | undefined {
-  if (action.kind !== 'ai') return undefined;
-  return action.id === 'translate' ? 'translation' : action.id === 'polish' ? 'polishing' : undefined;
+  return action.kind === 'ai' ? action.englishName : undefined;
+}
+export function validEnglishName(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-z][a-z0-9_]{0,47}$/.test(value)
+    && !/^(con|prn|aux|nul|com[0-9]|lpt[0-9]|translations)$/.test(value);
+}
+export function recordFilename(kind: string): string {
+  if (!validEnglishName(kind)) throw new Error('记录英文名称无效。');
+  // Preserve the filename used by earlier releases.
+  return kind === 'translation' ? 'translations.sqlite' : `${kind}.sqlite`;
+}
+export function validateActionNames(next: Settings, previous: Settings): void {
+  for (const action of next.actions) {
+    const saved = previous.actions.find(item => item.id === action.id);
+    if (saved && saved.englishName !== action.englishName) throw new Error('已保存动作的英文名称不可修改；显示名称可随时调整。');
+  }
 }
 export interface ResultState { id: string; recorded: boolean; recordKind?: RecordKind; actionName: string; actionIcon: string; text: string; source: string; app: string; busy: boolean; error?: string; demo: boolean }
-export type UIEvent = { type: 'snapshot'; snapshot: Snapshot } | { type: 'result'; result: ResultState } | { type: 'settings-window'; maximized: boolean };
+export type UIEvent = { type: 'snapshot'; snapshot: Snapshot } | { type: 'result'; result: ResultState } | { type: 'settings-window'; maximized: boolean } | { type: 'records-changed'; kind: RecordKind };
 export interface GlintAPI {
   snapshot(): Promise<Snapshot>;
   save(settings: Settings, keyUpdate?: string): Promise<{ ok: boolean; error?: string }>;
@@ -37,6 +54,9 @@ export interface GlintAPI {
   retryResult(): Promise<void>;
   copyResult(): Promise<boolean>;
   recordSource(resultId: string): Promise<{ ok: boolean; error?: string }>;
+  listRecords(kind: RecordKind, page: number): Promise<RecordPage>;
+  getRecord(kind: RecordKind, id: string): Promise<SavedRecord | undefined>;
+  copyRecord(kind: RecordKind, id: string, field: 'original' | 'result'): Promise<boolean>;
   restart(): Promise<void>;
   quit(): Promise<void>;
   subscribe(callback: (event: UIEvent) => void): () => void;
@@ -47,13 +67,37 @@ export const defaults: Settings = {
   theme: 'system', accent: 'blue', density: 'comfortable',
   provider: { baseUrl: 'https://api.openai.com/v1', model: '' },
   actions: [
-    { id: 'translate', name: '翻译', icon: 'languages', kind: 'ai', prompt: '将以下文字翻译成自然、准确的简体中文；如果原文是中文，则翻译成英文。仅输出译文。\n\n{text}', enabled: true },
-    { id: 'explain', name: '解释', icon: 'sparkles', kind: 'ai', prompt: '请用简洁的中文解释以下内容，保留必要的技术细节：\n\n{text}', enabled: true },
-    { id: 'polish', name: '润色', icon: 'pen', kind: 'ai', prompt: '润色以下文字，使其清晰、自然，保持原语言和原意。仅输出修改后的文字。\n\n{text}', enabled: true },
-    { id: 'search', name: '搜索', icon: 'search', kind: 'search', prompt: '', enabled: true },
-    { id: 'copy', name: '复制', icon: 'copy', kind: 'copy', prompt: '', enabled: true }
+    { id: 'translate', englishName: 'translation', name: '翻译', icon: 'languages', kind: 'ai', prompt: '将以下文字翻译成自然、准确的简体中文；如果原文是中文，则翻译成英文。仅输出译文。\n\n{text}', enabled: true },
+    { id: 'explain', englishName: 'explanation', name: '解释', icon: 'sparkles', kind: 'ai', prompt: '请用简洁的中文解释以下内容，保留必要的技术细节：\n\n{text}', enabled: true },
+    { id: 'polish', englishName: 'polishing', name: '润色', icon: 'pen', kind: 'ai', prompt: '润色以下文字，使其清晰、自然，保持原语言和原意。仅输出修改后的文字。\n\n{text}', enabled: true },
+    { id: 'search', englishName: 'search', name: '搜索', icon: 'search', kind: 'search', prompt: '', enabled: true }
   ]
 };
+
+// Disk loading migrates retired actions and fills missing English names once.
+export function migrateSettings(input: unknown): Settings {
+  if (!input || typeof input !== 'object') return validateSettings(input);
+  const saved = input as Record<string, unknown>;
+  if (!Array.isArray(saved.actions)) return validateSettings(input);
+  const isCopy = (action: unknown) => !!action && typeof action === 'object' && (action as Record<string, unknown>).kind === 'copy';
+  let actions = saved.actions.filter(action => !isCopy(action));
+  if (!actions.length && saved.actions.some(isCopy)) actions = structuredClone(defaults.actions);
+  else if (saved.actions.some(isCopy) && actions.every(action => action && typeof action === 'object' && action.enabled === false)) {
+    actions = actions.map((action, index) => index === 0 ? { ...action, enabled: true } : action);
+  }
+  const used = new Set(actions.map(action => action?.englishName).filter(Boolean));
+  let counter = 1;
+  actions = actions.map(action => {
+    if (!action || typeof action !== 'object' || action.englishName !== undefined) return action;
+    let englishName = defaults.actions.find(item => item.id === action.id)?.englishName;
+    if (!englishName || used.has(englishName)) {
+      do { englishName = `action_user_${counter++}`; } while (used.has(englishName));
+    }
+    used.add(englishName);
+    return { ...action, englishName };
+  });
+  return validateSettings({ ...saved, actions });
+}
 
 export function validateSettings(input: unknown): Settings {
   if (!input || typeof input !== 'object') throw new Error('设置格式无效。');
@@ -68,8 +112,11 @@ export function validateSettings(input: unknown): Settings {
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.hash || url.search) throw new Error('API 地址须为 HTTP(S) 地址，不包含密码、查询参数或片段。');
   if (!Array.isArray(s.actions) || s.actions.length < 1 || s.actions.length > 12) throw new Error('请保留 1–12 个动作。');
   const ids = new Set<string>();
+  const englishNames = new Set<string>();
   for (const a of s.actions) {
-    if (!a || !text(a.id, 64) || !a.id || ids.has(a.id) || !text(a.name, 20) || !a.name.trim() || !text(a.icon, 64) || !['ai', 'copy', 'search'].includes(a.kind) || !text(a.prompt, 12000) || typeof a.enabled !== 'boolean') throw new Error('动作配置无效，请检查名称和类型。');
+    if (!a || !text(a.id, 64) || !a.id || ids.has(a.id) || !text(a.name, 20) || !a.name.trim() || !text(a.icon, 64) || !['ai', 'search'].includes(a.kind) || !text(a.prompt, 12000) || typeof a.enabled !== 'boolean') throw new Error('动作配置无效，请检查名称和类型。');
+    if (!validEnglishName(a.englishName) || englishNames.has(a.englishName)) throw new Error('英文名称须唯一，使用小写字母开头的 1–48 位字母、数字或下划线，且不能使用系统保留名称。');
+    englishNames.add(a.englishName);
     if (a.kind === 'ai' && !a.prompt.includes('{text}')) throw new Error(`“${a.name}”的提示词须包含 {text}。`);
     ids.add(a.id);
   }
@@ -78,7 +125,7 @@ export function validateSettings(input: unknown): Settings {
     version: 1, enabled: s.enabled, trigger: s.trigger, shortcut: s.shortcut.trim(), clipboardFallback: s.clipboardFallback,
     excludedApps: [...new Set(s.excludedApps.map(a => a.trim().toLowerCase()))], theme: s.theme, accent: s.accent, density: s.density,
     provider: { baseUrl: s.provider.baseUrl.trim().replace(/\/+$/, ''), model: s.provider.model.trim() },
-    actions: s.actions.map(a => ({ id: a.id, name: a.name.trim(), icon: a.icon, kind: a.kind, prompt: a.prompt, enabled: a.enabled }))
+    actions: s.actions.map(a => ({ id: a.id, name: a.name.trim(), englishName: a.englishName, icon: a.icon, kind: a.kind, prompt: a.prompt, enabled: a.enabled }))
   };
 }
 

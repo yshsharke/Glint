@@ -6,7 +6,7 @@
 
 [简体中文](README.md) · **English**
 
-Glint is a customizable text selection assistant for Windows. Translate while reading, polish a sentence while writing, or search and copy from a compact toolbar without switching between apps.
+Glint is a customizable text selection assistant for Windows. Translate while reading, polish a sentence while writing, or search from a compact toolbar without switching between apps.
 
 [Download Glint](https://github.com/yshsharke/Glint/releases) · [Report an issue](https://github.com/yshsharke/Glint/issues) · [Changelog](CHANGELOG.md)
 
@@ -33,13 +33,13 @@ GitHub's **Source code** archives are for development, not ready-to-run download
 
 1. Open **模型 (Model)**, enter your provider's API URL, model name and API key, then click **保存设置 (Save settings)**. Glint supports OpenAI-compatible APIs and local model services. It does not include a model subscription or API credits.
 2. Select text in another application to show the toolbar, or press **Ctrl + Alt + G** to capture the current selection.
-3. Choose **翻译 (Translate)** or **润色 (Polish)** to open a result card. Copy and search work without a model connection.
+3. Choose **翻译 (Translate)** or **润色 (Polish)** to open a result card. Search works without a model connection.
 
 Click the Glint icon on the toolbar to open settings. Closing settings keeps Glint running in the system tray. Left-click the tray icon to reopen settings; right-click for **打开设置 (Open settings)**, **停止划词 / 启用划词 (Disable / Enable selection)** and **退出 (Quit)**. You can also quit from the bottom-left corner of settings.
 
 ## Make it yours
 
-- **Your own actions.** Edit prompts and add up to 12 actions. Reorder, enable or hide them.
+- **Your own actions.** Choose **指令 (Instruction)** or **搜索 (Search)**, edit prompts and add up to 12 actions. Reorder, enable or hide them. New actions need a display name and a unique English name (such as Summary / summary). The English name is shown only during creation and stays fixed after saving to identify the database.
 - **A consistent icon library.** Browse and search the built-in Lucide icons, available offline.
 - **Control when it appears.** Use automatic selection or a keyboard shortcut, exclude specific apps and optionally enable clipboard fallback.
 - **A compact Windows-style interface.** Follow the system theme or choose light/dark, with four accent colors and two toolbar densities.
@@ -58,7 +58,7 @@ Use `{text}` in an action prompt to insert the selected text. For example:
 
 Results stream into a separate card. Stop a response, retry it or copy it with one click. The header shows the action and source app; expand the original text to review it.
 
-The built-in Translate and Polish actions also offer **记录 (Save)** to store the original text, result and source process locally. These two categories use separate databases. Saving again after a retry updates the same record. A history browser and search interface are not yet available.
+Every **指令 (Instruction)** action—including Translate, Explain, Polish and your own actions—offers **记录 (Save)** to store the original text, result and source process in its own local database. Saving again after a retry updates the same record. In **历史 (History)**, switch between actions to browse records by date, review the original and result, and copy either one. Disabled actions remain available in History. History browsing and records for custom actions are available from 0.3.0; search is not yet supported.
 
 ## Your data
 

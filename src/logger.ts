@@ -4,7 +4,7 @@ import path from 'node:path';
 // Typed metadata only: never accept request bodies, credentials, URLs or raw errors.
 interface LogFields {
   requestId?: string;
-  kind?: 'translation' | 'polishing' | 'other';
+  kind?: string;
   hook?: string;
   status?: number;
   elapsedMs?: number;

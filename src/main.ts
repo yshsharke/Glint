@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, Menu, nativeImage, safeStorage, screen, shell, Tray, utilityProcess } from 'electron';
+import { app, BrowserWindow, clipboard, ClipboardItem, globalShortcut, ipcMain, Menu, nativeImage, safeStorage, screen, shell, Tray, utilityProcess } from 'electron';
 import type { IpcMainInvokeEvent, UtilityProcess } from 'electron';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
@@ -9,7 +9,7 @@ import { AppLogger, errorCode } from './logger';
 import { runtimePaths } from './runtime-paths';
 import { isAppPage } from './ipc-origin';
 import type { TextSelectionData } from 'selection-hook';
-import { defaults, endpoint, modelErrorMessage, placeToolbar, readSSE, recordKind, validateSettings } from './core';
+import { defaults, endpoint, migrateSettings, modelErrorMessage, placeToolbar, readSSE, recordKind, recordFilename, validateActionNames, validateSettings } from './core';
 import type { RecordKind, ResultState, Selection, Settings, Snapshot, Status, UIEvent } from './core';
 
 const packageCheck = process.argv.includes('--package-check');
@@ -30,25 +30,33 @@ const configPath = path.join(app.getPath('userData'), 'settings.json');
 const paths = runtimePaths(testRoot, process.env.LOCALAPPDATA || path.join(app.getPath('home'), 'AppData', 'Local'), smoke);
 const recordsFolder = paths.data;
 let logger: AppLogger | undefined;
-const recordsPaths: Record<RecordKind, string> = {
-  translation: path.join(recordsFolder, 'translations.sqlite'),
-  polishing: path.join(recordsFolder, 'polishing.sqlite')
-};
-const recordStores: Partial<Record<RecordKind, RecordStore>> = {};
+const recordPath = (kind: RecordKind) => path.join(recordsFolder, recordFilename(kind));
+const recordStores = new Map<RecordKind, RecordStore>();
 function openRecordStore(kind: RecordKind): RecordStore {
-  if (recordStores[kind]) return recordStores[kind];
-  const store = new RecordStore(recordsPaths[kind]);
+  const cached = recordStores.get(kind);
+  if (cached) return cached;
+  const store = new RecordStore(recordPath(kind));
   try {
-    if (!smoke) {
-      const imported = store.migrateFrom(path.join(root, 'work', path.basename(recordsPaths[kind])));
+    if (!smoke && (kind === 'translation' || kind === 'polishing')) {
+      const imported = store.migrateFrom(path.join(root, 'work', recordFilename(kind)));
       if (imported !== undefined) logger?.write('records.migrated', { kind, imported });
     }
-    recordStores[kind] = store;
+    recordStores.set(kind, store);
     return store;
   } catch (error) { store.close(); throw error; }
 }
 function closeRecordStores() {
-  for (const kind of Object.keys(recordStores) as RecordKind[]) { recordStores[kind]?.close(); delete recordStores[kind]; }
+  for (const store of recordStores.values()) store.close();
+  recordStores.clear();
+}
+function initializeRecordStores(actions: Settings['actions']) {
+  for (const action of actions.filter(action => action.kind === 'ai')) {
+    try { openRecordStore(action.englishName); }
+    catch (error) {
+      logger?.write('records.initialization-failed', { kind: action.englishName, code: errorCode(error) });
+      diagnose(`“${action.name}”记录数据库暂不可用，点击记录时将重新尝试。`);
+    }
+  }
 }
 let settings: Settings = structuredClone(defaults);
 let encryptedKey = '';
@@ -89,7 +97,15 @@ function persist(next: Settings, key: string) {
 }
 function load() {
   if (!fs.existsSync(configPath)) return;
-  try { const saved = JSON.parse(fs.readFileSync(configPath, 'utf8')); settings = validateSettings(saved.settings); encryptedKey = typeof saved.encryptedKey === 'string' ? saved.encryptedKey : ''; }
+  try {
+    const saved = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    settings = migrateSettings(saved.settings);
+    encryptedKey = typeof saved.encryptedKey === 'string' ? saved.encryptedKey : '';
+    if (JSON.stringify(saved.settings) !== JSON.stringify(settings)) {
+      try { persist(settings, encryptedKey); }
+      catch { diagnose('设置已升级，但配置暂时无法写入磁盘。'); }
+    }
+  }
   catch { diagnose('设置文件无法读取，使用默认配置；原文件仍保留。'); }
 }
 function secureWindow(win: BrowserWindow) {
@@ -99,7 +115,7 @@ function secureWindow(win: BrowserWindow) {
 }
 function openSettings() {
   if (setup && !setup.isDestroyed()) { if (setup.isMinimized()) setup.restore(); setup.show(); setup.focus(); return; }
-  setup = new BrowserWindow({ width: 920, height: 640, minWidth: 820, minHeight: 570, frame: false, fullscreenable: false, title: 'Glint', backgroundColor: '#f3f3f3', show: false, autoHideMenuBar: true, icon: createIcon(), webPreferences: { preload, contextIsolation: true, sandbox: true, nodeIntegration: false } });
+  setup = new BrowserWindow({ width: 920, height: 640, minWidth: 820, minHeight: 570, frame: false, fullscreenable: false, title: 'Glint', backgroundColor: '#f3f3f3', show: false, autoHideMenuBar: true, icon: createIcon(), webPreferences: { preload, contextIsolation: true, sandbox: true, nodeIntegration: false, backgroundThrottling: !smoke } });
   secureWindow(setup);
   setup.loadFile(page, { query: { view: 'settings' } });
   const win = setup;
@@ -215,7 +231,6 @@ async function runAction(actionId: unknown) {
   const captured = selection;
   if (!action || !captured) throw new Error('请先选择文字。');
   dismissToolbar();
-  if (action.kind === 'copy') { clipboard.writeText(captured.text); diagnose('已复制选中文字。'); return; }
   if (action.kind === 'search') { await shell.openExternal(`https://www.google.com/search?q=${encodeURIComponent(captured.text.slice(0, 4000))}`); return; }
   abort?.abort();
   const controller = new AbortController(); abort = controller;
@@ -272,6 +287,21 @@ function guard(event: IpcMainInvokeEvent) {
 }
 function installIPC() {
   const handle = (name: string, fn: (event: IpcMainInvokeEvent, ...args: any[]) => unknown) => ipcMain.handle(`glint:${name}`, (event, ...args) => { guard(event); return fn(event, ...args); });
+  const historyStore = (event: IpcMainInvokeEvent, kind: unknown) => {
+    if (event.sender !== setup?.webContents) throw new Error('Settings window only');
+    if (typeof kind !== 'string' || !settings.actions.some(action => recordKind(action) === kind)) throw new Error('记录类型无效。');
+    return openRecordStore(kind);
+  };
+  handle('list-records', (event, kind, pageNumber) => historyStore(event, kind).list(pageNumber));
+  handle('get-record', (event, kind, id) => historyStore(event, kind).get(id));
+  handle('copy-record', async (event, kind, id, field) => {
+    const store = historyStore(event, kind);
+    if (field !== 'original' && field !== 'result') throw new Error('记录字段无效。');
+    const record = store.get(id);
+    const text = field === 'original' ? record?.originalText : record?.resultText;
+    if (!text) return false;
+    await clipboard.writeText(text); return true;
+  });
   handle('snapshot', () => snapshot());
   handle('save', (_event, input, keyUpdate) => {
     if (saving) return { ok: false, error: '正在保存，请稍后重试。' };
@@ -279,6 +309,7 @@ function installIPC() {
     let newShortcut: string | undefined;
     try {
       const next = validateSettings(input);
+      validateActionNames(next, settings);
       if (keyUpdate !== undefined && (typeof keyUpdate !== 'string' || keyUpdate.length > 4096)) throw new Error('API Key 格式无效。');
       let key = encryptedKey;
       if (keyUpdate !== undefined) {
@@ -292,6 +323,7 @@ function installIPC() {
       persist(next, key);
       if (newShortcut && settings.shortcut !== newShortcut) globalShortcut.unregister(settings.shortcut);
       settings = next; encryptedKey = key; status.shortcutReady = true;
+      initializeRecordStores(settings.actions);
       configureHost(); dismissToolbar(); updateTray(); broadcast();
       return { ok: true };
     } catch (error) {
@@ -334,7 +366,7 @@ function installIPC() {
   handle('record-source', (event, resultId) => {
     if (event.sender !== resultWindow?.webContents) throw new Error('Result window only');
     if (!result || resultId !== result.id) return { ok: false, error: '卡片已更新，请重新点击记录。' };
-    if (!result.recordKind) return { ok: false, error: '仅翻译和润色支持记录原文。' };
+    if (!result.recordKind) return { ok: false, error: '仅指令动作支持记录。' };
     if (result.busy || !result.text.trim()) return { ok: false, error: '请等待生成结束，且有结果正文后再记录。' };
     try {
       const records = openRecordStore(result.recordKind);
@@ -342,6 +374,7 @@ function installIPC() {
       logger?.write('records.saved', { kind: result.recordKind, requestId: result.id, saved: true });
       result.recorded = true;
       emit({ type: 'result', result });
+      emit({ type: 'records-changed', kind: result.recordKind });
       return { ok: true };
     } catch (error) {
       logger?.write('records.failed', { kind: result.recordKind, code: errorCode(error) });
@@ -366,13 +399,7 @@ else {
     if (logger) app.setAppLogsPath(paths.logs);
     if (smoke) { settings.shortcut = 'CommandOrControl+Alt+Shift+F12'; settings.trigger = 'shortcut'; }
     else load();
-    for (const kind of Object.keys(recordsPaths) as RecordKind[]) {
-      try { openRecordStore(kind); }
-      catch (error) {
-        logger?.write('records.initialization-failed', { kind, code: errorCode(error) });
-        diagnose(`${kind === 'translation' ? '翻译' : '润色'}记录数据库暂不可用，点击记录时将重新尝试。`);
-      }
-    }
+    initializeRecordStores(settings.actions);
     installIPC();
     tray = new Tray(createIcon(32)); tray.setToolTip('Glint · 选中文字，即刻行动'); tray.on('click', openSettings); updateTray();
     status.shortcutReady = registerShortcut(settings.shortcut);
@@ -408,7 +435,7 @@ async function runPackageCheck() {
     if (Date.now() > deadline) throw new Error('Packaged settings controls did not render');
     await new Promise(resolve => setTimeout(resolve, 100));
   }
-  for (const file of Object.values(recordsPaths)) assert.ok(fs.existsSync(file), 'Packaged SQLite initialization');
+  for (const action of settings.actions.filter(action => action.kind === 'ai')) assert.ok(fs.existsSync(recordPath(action.englishName)), 'Packaged SQLite initialization');
   assert.ok(!paths.data.startsWith(root), 'Packaged test data must be outside ASAR');
 }
 
@@ -452,6 +479,13 @@ async function runSmoke() {
     await setup!.webContents.executeJavaScript(code, true);
     await wait(100);
   };
+  const untilUI = async (condition: string, description: string) => {
+    const deadline = Date.now() + 5000;
+    while (!await setup!.webContents.executeJavaScript(condition)) {
+      if (Date.now() > deadline) throw new Error(`Timeout: ${description}`);
+      await wait(60);
+    }
+  };
   const setInput = async (selector: string, value: string) => ui(`(() => {
     const input = document.querySelector(${JSON.stringify(selector)});
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, ${JSON.stringify(value)});
@@ -470,15 +504,18 @@ async function runSmoke() {
   await ui("document.querySelector('[data-action-field=kind]').focus(); document.querySelector('[data-action-field=kind]').click()");
   await fs.promises.writeFile(path.join(folder, 'dropdown-dark.png'), (await setup!.webContents.capturePage()).toPNG());
   assert.ok(await setup!.webContents.executeJavaScript("!!document.querySelector('[role=listbox]')"), 'Fluent dropdown opens');
+  assert.deepEqual(await setup!.webContents.executeJavaScript("[...document.querySelectorAll('[role=listbox] [role=option]')].map(option => option.textContent)"), ['指令', '搜索'], 'only current action types are offered');
   for (const keyCode of ['Down', 'Return']) {
     setup!.webContents.sendInputEvent({ type: 'keyDown', keyCode });
     setup!.webContents.sendInputEvent({ type: 'keyUp', keyCode });
   }
   await wait(200);
-  assert.equal(await setup!.webContents.executeJavaScript("document.querySelector('[data-action-field=kind]').textContent"), '复制文字', 'Arrow and Enter must update the action type');
+  assert.equal(await setup!.webContents.executeJavaScript("document.querySelector('[data-action-field=kind]').textContent"), '搜索', 'Arrow and Enter must update the action type');
   await ui("document.querySelector('[data-revert]').click()");
   const actionCount = settings.actions.length;
+  assert.equal(await setup!.webContents.executeJavaScript("document.querySelector('[data-action-field=englishName]') === null"), true, 'existing actions hide the English name');
   await ui("document.querySelector('[data-add]').click()");
+  await setInput('[data-action-field=englishName]', 'smoke_custom');
   await ui("document.querySelector('[data-open-icon-picker]').focus()");
   await ui("document.querySelector('[data-open-icon-picker]').click()");
   assert.equal(await setup!.webContents.executeJavaScript("document.querySelectorAll('[data-pick-icon]').length"), 32);
@@ -498,10 +535,11 @@ async function runSmoke() {
   const longIcon = 'triangles-centerline-dashed-horizontal';
   await setInput('[data-icon-search]', longIcon);
   await ui(`document.querySelector('[data-pick-icon="${longIcon}"]').click()`);
-  await wait(200);
+  await untilUI("document.activeElement.matches('[data-open-icon-picker]')", 'dialog restores focus after its closing animation');
   assert.equal(await setup!.webContents.executeJavaScript("document.activeElement.matches('[data-open-icon-picker]') ? 'opener' : document.activeElement.outerHTML.slice(0, 1000)"), 'opener', 'Dialog restores focus to its opener');
   await ui("document.querySelector('[data-save]').click()");
   await until(() => settings.actions.length === actionCount + 1 && settings.actions.at(-1)?.icon === longIcon, 'new action icon save');
+  await untilUI("document.querySelector('[data-action-field=englishName]') === null", 'English name disappears after first save');
   assert.ok(await setup!.webContents.executeJavaScript(`(() => {
     const input = document.querySelector('input[data-action-field=name]');
     const rect = input.getBoundingClientRect();
@@ -559,12 +597,17 @@ async function runSmoke() {
   const fixture = new BrowserWindow({ width: 500, height: 260, show: false, title: 'Glint native selection test', webPreferences: { sandbox: true, nodeIntegration: false, contextIsolation: true } });
   try {
     await fixture.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`<textarea style="width:90%;height:100px" aria-label="Selection fixture">${fixtureText}</textarea>`));
-    fixture.show(); fixture.focus(); fixture.webContents.focus();
-    await until(() => fixture.isFocused(), 'selection fixture focus');
-    await fixture.webContents.executeJavaScript("const input = document.querySelector('textarea'); input.focus(); input.select();");
-    await wait(750);
-    captureSelection();
-    await until(() => !capturePending, 'native selection capture');
+    // UIA can briefly miss the foreground selection while Windows transfers focus.
+    // Re-focus the same controlled fixture; every attempt still uses the real native hook.
+    for (let attempt = 0; attempt < 3; attempt++) {
+      fixture.show(); fixture.focus(); fixture.webContents.focus();
+      await until(() => fixture.isFocused(), 'selection fixture focus');
+      await fixture.webContents.executeJavaScript("(() => { const input = document.querySelector('textarea'); input.focus(); input.select(); })()");
+      await wait(750);
+      captureSelection();
+      await until(() => !capturePending, 'native selection capture');
+      if (selection?.text === fixtureText) break;
+    }
     assert.equal(selection?.text, fixtureText, 'Native UI Automation should read the controlled selection');
     assert.equal(selection?.demo, false);
     dismissToolbar();
@@ -596,27 +639,28 @@ async function runSmoke() {
     assert.ok(toolbar?.isVisible());
     assert.equal(toolbar!.isFocusable(), false);
     assert.equal(await toolbar!.webContents.executeJavaScript("document.querySelectorAll('[data-run]').length"), next.actions.filter(a => a.enabled).length);
+    assert.equal(await toolbar!.webContents.executeJavaScript("document.querySelector('[data-run=copy]')"), null, 'the retired default copy action is absent');
     await fs.promises.writeFile(path.join(folder, 'toolbar.png'), (await toolbar!.webContents.capturePage()).toPNG());
     const readToolbarLayout = () => toolbar!.webContents.executeJavaScript(`(() => {
       const actions = document.querySelector('.bar-actions');
-      const copy = document.querySelector('[data-run="copy"]').getBoundingClientRect();
-      return { viewport: actions.clientWidth, content: actions.scrollWidth, copyRight: copy.right, viewportRight: actions.getBoundingClientRect().right, x: copy.x + copy.width / 2, y: copy.y + copy.height / 2 };
+      const last = actions.lastElementChild.getBoundingClientRect();
+      return { viewport: actions.clientWidth, content: actions.scrollWidth, lastRight: last.right, viewportRight: actions.getBoundingClientRect().right, x: last.x + last.width / 2, y: last.y + last.height / 2 };
     })()`);
     const toolbarLayout = await readToolbarLayout();
-    assert.ok(toolbarLayout.copyRight <= toolbarLayout.viewportRight + 0.5, 'Copy button clipped: ' + JSON.stringify(toolbarLayout));
+    assert.ok(toolbarLayout.lastRight <= toolbarLayout.viewportRight + 0.5, 'Last action clipped: ' + JSON.stringify(toolbarLayout));
     toolbar!.webContents.sendInputEvent({ type: 'mouseMove', x: Math.round(toolbarLayout.x), y: Math.round(toolbarLayout.y) });
     await wait(100);
-    await fs.promises.writeFile(path.join(folder, 'toolbar-copy-hover.png'), (await toolbar!.webContents.capturePage()).toPNG());
+    await fs.promises.writeFile(path.join(folder, 'toolbar-last-hover.png'), (await toolbar!.webContents.capturePage()).toPNG());
     setup!.hide();
     assert.equal(await toolbar!.webContents.executeJavaScript("document.querySelectorAll('[data-open-settings]').length"), 1);
     await toolbar!.webContents.executeJavaScript("document.querySelector('button.mini-brand[data-open-settings]').click()");
     await until(() => !!setup?.isVisible() && !toolbar?.isVisible(), 'brand button opens settings and dismisses toolbar');
     for (const density of ['comfortable', 'compact'] as const) {
       settings = structuredClone(next); settings.density = density;
-      settings.actions.find(a => a.id === 'copy')!.name = '复制 WMWM';
+      settings.actions.find(a => a.id === 'search')!.name = '搜索 WMWM';
       await showDemo(); await wait(150);
       const layout = await readToolbarLayout();
-      assert.ok(layout.copyRight <= layout.viewportRight + 0.5, `Copy button clipped (${density}): ${JSON.stringify(layout)}`);
+      assert.ok(layout.lastRight <= layout.viewportRight + 0.5, `Last action clipped (${density}): ${JSON.stringify(layout)}`);
     }
     dismissToolbar(); broadcast(); await wait(100);
     assert.equal(toolbar!.isVisible(), false, 'A stale measurement must not reopen a dismissed toolbar');
@@ -683,7 +727,7 @@ async function runSmoke() {
     await resultWindow!.webContents.executeJavaScript("document.querySelector('[data-cancel]').click()");
     await until(() => !result?.busy, 'stop button cancels generation');
     await wait(100);
-    const recordReader = new DatabaseSync(recordsPaths.translation, { readOnly: true });
+    const recordReader = new DatabaseSync(recordPath('translation'), { readOnly: true });
     try {
       assert.equal(recordReader.prepare('SELECT id FROM records WHERE id = ?').get(result!.id), undefined, 'original text is not automatically recorded');
       assert.equal((await resultWindow!.webContents.executeJavaScript(`window.glint.recordSource(${JSON.stringify(previousCardId)})`)).ok, false, 'stale cards cannot save a new selection');
@@ -723,18 +767,29 @@ async function runSmoke() {
     await wait(100);
     await resultWindow!.webContents.executeJavaScript("document.querySelector('[data-record-source]').click()");
     await until(() => !!result?.recorded, 'updated result saved');
-    const updatedDb = new DatabaseSync(recordsPaths.translation, { readOnly: true });
+    const updatedDb = new DatabaseSync(recordPath('translation'), { readOnly: true });
     try {
       assert.equal(updatedDb.prepare('SELECT result_text FROM records WHERE id = ?').get(result!.id)!.result_text, 'Glint 流式测试成功。');
       assert.equal(updatedDb.prepare('SELECT count(*) AS count FROM records WHERE id = ?').get(result!.id)!.count, 1);
     } finally { updatedDb.close(); }
     const translationCardId = result!.id;
+    await ui("document.querySelector('[data-page=history]').click()");
+    await untilUI(`!!document.querySelector('[data-history-id="${translationCardId}"]')`, 'translation history renders');
+    assert.ok(await setup!.webContents.executeJavaScript(`!!document.querySelector('[data-history-id="${translationCardId}"]')`), 'history shows saved translation');
+    await ui(`document.querySelector('[data-history-id="${translationCardId}"]').click()`);
+    await wait(150);
+    assert.equal(await setup!.webContents.executeJavaScript("document.querySelector('[data-history-result]').textContent"), 'Glint 流式测试成功。');
+    assert.equal(await setup!.webContents.executeJavaScript(`window.glint.getRecord('polishing', '${translationCardId}')`), undefined, 'history cannot cross record categories');
+    assert.equal(await setup!.webContents.executeJavaScript("window.glint.listRecords('../translation', 0).then(() => false, () => true)"), true, 'history rejects unknown database names');
+    assert.equal(await resultWindow!.webContents.executeJavaScript("window.glint.listRecords('translation', 0).then(() => false, () => true)"), true, 'history is restricted to settings');
+    await ui("document.querySelector('[data-history-kind=polishing]').click()");
     await runAction('polish');
     await until(() => !!result && !result.busy, 'polishing response');
     await wait(100);
+    assert.equal(await setup!.webContents.executeJavaScript("document.querySelector('[data-history-kind=polishing]').getAttribute('aria-selected')"), 'true', 'settings snapshots preserve the chosen history category');
     assert.equal(result!.recordKind, 'polishing');
     const polishingCardId = result!.id;
-    const lockedDb = new DatabaseSync(recordsPaths.polishing);
+    const lockedDb = new DatabaseSync(recordPath('polishing'));
     try {
       lockedDb.exec('BEGIN IMMEDIATE');
       const failedSave = await resultWindow!.webContents.executeJavaScript(`window.glint.recordSource(${JSON.stringify(polishingCardId)})`);
@@ -743,8 +798,24 @@ async function runSmoke() {
     } finally { lockedDb.exec('ROLLBACK'); lockedDb.close(); }
     await resultWindow!.webContents.executeJavaScript("document.querySelector('[data-record-source]').click()");
     await until(() => !!result?.recorded, 'polishing record saved');
-    for (const kind of Object.keys(recordsPaths) as RecordKind[]) {
-      const db = new DatabaseSync(recordsPaths[kind], { readOnly: true });
+    await untilUI(`!!document.querySelector('[data-history-id="${polishingCardId}"]')`, 'history refreshes after saving');
+    assert.ok(await setup!.webContents.executeJavaScript(`!!document.querySelector('[data-history-id="${polishingCardId}"]')`), 'history refreshes automatically after saving');
+    await ui(`document.querySelector('[data-history-id="${polishingCardId}"]').click()`);
+    await wait(150);
+    assert.equal(await setup!.webContents.executeJavaScript("document.querySelector('[data-history-original]').textContent"), result!.source);
+    assert.equal(await setup!.webContents.executeJavaScript("document.querySelector('[data-history-result]').textContent"), result!.text);
+    const previousClipboard = await Promise.all((await clipboard.read()).map(async item => new ClipboardItem(
+      Object.fromEntries(await Promise.all(item.types.map(async type => [type, await item.getType(type)])))
+    )));
+    try {
+      await ui("document.querySelector('[data-history-copy=result]').click()");
+      assert.equal(await clipboard.readText(), result!.text, 'history copies the stored result');
+      await ui("document.querySelector('[data-history-copy=original]').click()");
+      assert.equal(await clipboard.readText(), result!.source, 'history copies the original');
+    } finally { if (previousClipboard.length) await clipboard.write(previousClipboard); else await clipboard.clear(); }
+    await fs.promises.writeFile(path.join(folder, 'history.png'), (await setup!.webContents.capturePage()).toPNG());
+    for (const kind of ['translation', 'polishing']) {
+      const db = new DatabaseSync(recordPath(kind), { readOnly: true });
       try {
         const ownId = kind === 'translation' ? translationCardId : polishingCardId;
         const otherId = kind === 'translation' ? polishingCardId : translationCardId;
@@ -761,12 +832,43 @@ async function runSmoke() {
     await runAction('explain');
     await until(() => !!result && !result.busy, 'explanation response');
     await wait(100);
-    assert.equal(await resultWindow!.webContents.executeJavaScript("document.querySelector('[data-record-source]') === null"), true, 'explanation has no record button');
-    assert.equal((await resultWindow!.webContents.executeJavaScript(`window.glint.recordSource(${JSON.stringify(result!.id)})`)).ok, false, 'non-recordable actions are rejected by main process');
+    assert.equal(await resultWindow!.webContents.executeJavaScript("document.querySelector('[data-record-source]') !== null"), true, 'explanation has a record button');
+    assert.equal((await resultWindow!.webContents.executeJavaScript(`window.glint.recordSource(${JSON.stringify(result!.id)})`)).ok, true, 'explanation can be saved');
+    assert.equal(openRecordStore('explanation').get(result!.id)?.resultText, result!.text);
+    assert.equal(openRecordStore('translation').get(result!.id), undefined, 'explanation has its own database');
+    const customSettings = structuredClone(settings);
+    customSettings.actions.push({ ...defaults.actions[0], id: 'smoke-history-action', name: '自定义总结', englishName: 'smoke_summary', icon: 'book' });
+    const saveFromSettings = (next: Settings) => setup!.webContents.executeJavaScript(`window.glint.save(${JSON.stringify(next)})`);
+    assert.equal((await saveFromSettings(customSettings)).ok, true);
+    assert.ok(fs.existsSync(recordPath('smoke_summary')), 'saving an instruction initializes its database');
+    await untilUI("!!document.querySelector('[data-history-kind=smoke_summary] .lucide-book')", 'custom instruction gets a history tab');
+    await ui("document.querySelector('[data-history-kind=smoke_summary]').click()");
+    await runAction('smoke-history-action');
+    await until(() => !!result && !result.busy, 'custom instruction response');
+    const customResultId = result!.id;
+    assert.equal((await resultWindow!.webContents.executeJavaScript(`window.glint.recordSource(${JSON.stringify(customResultId)})`)).ok, true);
+    await untilUI(`!!document.querySelector('[data-history-id="${customResultId}"]')`, 'custom history refreshes after saving');
+    assert.equal(openRecordStore('smoke_summary').get(customResultId)?.originalText, result!.source);
+    assert.equal(openRecordStore('smoke_summary').get(customResultId)?.resultText, result!.text);
+    assert.equal(openRecordStore('explanation').get(customResultId), undefined, 'custom records are isolated');
+    customSettings.actions.at(-1)!.name = '我的总结';
+    customSettings.actions.at(-1)!.icon = 'pen';
+    customSettings.actions.at(-1)!.enabled = false;
+    assert.equal((await saveFromSettings(customSettings)).ok, true);
+    await untilUI("!!document.querySelector('[data-history-kind=smoke_summary] .lucide-pen')", 'history uses the configured icon');
+    assert.equal(await setup!.webContents.executeJavaScript("document.querySelector('[data-history-kind=smoke_summary]').textContent"), '我的总结');
+    assert.equal(await setup!.webContents.executeJavaScript("document.querySelector('[data-history-kind=smoke_summary]').getAttribute('aria-selected')"), 'true');
+    assert.equal((await setup!.webContents.executeJavaScript(`window.glint.getRecord('smoke_summary', '${customResultId}')`)).id, customResultId, 'renaming and disabling preserve history');
+    customSettings.actions.at(-1)!.englishName = 'renamed_database';
+    assert.equal((await saveFromSettings(customSettings)).ok, false, 'saved English names are immutable at the IPC boundary');
+    customSettings.actions.pop();
+    assert.equal((await saveFromSettings(customSettings)).ok, true);
+    assert.ok(fs.existsSync(recordPath('smoke_summary')), 'deleting an action preserves its database');
+    await untilUI("!document.querySelector('[data-history-kind=smoke_summary]') && !!document.querySelector('.history-content')", 'removed category falls back to another instruction');
     await resultWindow!.webContents.executeJavaScript("document.querySelector('[data-close-result]').click()");
     await until(() => !resultWindow, 'custom close button closes the result card');
     settings = structuredClone(defaults); persist(settings, ''); configureHost();
-    const report = { passed: true, nativeHook: status.hook, shortcut: status.shortcutReady, checks: ['native module loads and starts', 'native UI Automation reads a controlled textarea selection', 'sandboxed UI bridge', 'settings save', 'non-focusable toolbar', 'configured actions render', 'copy button fully visible with default and mixed-width names in both densities', 'dismissed toolbar stays hidden after layout messages', 'OpenAI-compatible local SSE end-to-end'], memory: app.getAppMetrics().map(m => ({ type: m.type, memory: m.memory })), note: 'Live selection in third-party applications requires manual verification. Memory is a test-session snapshot with open windows, not an idle benchmark.' };
+    const report = { passed: true, nativeHook: status.hook, shortcut: status.shortcutReady, checks: ['native module loads and starts', 'native UI Automation reads a controlled textarea selection', 'sandboxed UI bridge', 'settings save', 'non-focusable toolbar', 'configured actions render', 'last action fully visible with default and mixed-width names in both densities', 'dismissed toolbar stays hidden after layout messages', 'OpenAI-compatible local SSE end-to-end'], memory: app.getAppMetrics().map(m => ({ type: m.type, memory: m.memory })), note: 'Live selection in third-party applications requires manual verification. Memory is a test-session snapshot with open windows, not an idle benchmark.' };
     fs.writeFileSync(path.join(folder, 'smoke-report.json'), JSON.stringify(report, null, 2));
     console.log('Glint smoke passed:', report.checks.join(', '));
   } finally { server.close(); host?.kill(); closeRecordStores(); }

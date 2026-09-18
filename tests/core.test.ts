@@ -8,7 +8,7 @@ import { isAppPage } from '../src/ipc-origin';
 import { RecordStore } from '../src/records';
 import { AppLogger, errorCode } from '../src/logger';
 import { runtimePaths } from '../src/runtime-paths';
-import { defaults, endpoint, modelErrorMessage, placeToolbar, readSSE, recordKind, validateSettings } from '../src/core';
+import { defaults, endpoint, migrateSettings, modelErrorMessage, placeToolbar, readSSE, recordKind, recordFilename, validEnglishName, validateActionNames, validateSettings } from '../src/core';
 
 test('IPC page guard accepts Chromium short-path encoding but rejects other origins and lookalike files', () => {
   const page = path.resolve('work', 'RUNNER~1', 'space 中文', 'index.html');
@@ -89,12 +89,12 @@ test('runtime logs rotate with bounded history and use codes instead of raw erro
   } finally { for (const name of readdirSync(folder)) unlinkSync(path.join(folder, name)); rmdirSync(folder); }
 });
 
-test('only built-in AI translation and polishing can record originals', () => {
+test('all instruction actions have independent record names; search does not', () => {
   assert.equal(recordKind(defaults.actions[0]), 'translation');
   assert.equal(recordKind(defaults.actions[2]), 'polishing');
-  assert.equal(recordKind(defaults.actions[1]), undefined);
-  assert.equal(recordKind({ ...defaults.actions[0], kind: 'copy' }), undefined);
-  assert.equal(recordKind({ ...defaults.actions[0], id: 'custom', name: '翻译' }), undefined);
+  assert.equal(recordKind(defaults.actions[1]), 'explanation');
+  assert.equal(recordKind({ ...defaults.actions[0], kind: 'search' }), undefined);
+  assert.equal(recordKind({ ...defaults.actions[0], id: 'custom', englishName: 'summary', name: '翻译' }), 'summary');
 });
 
 test('records persist exact original text and prevent duplicate writes for the same card', () => {
@@ -143,6 +143,8 @@ test('schema upgrade preserves old records and retry updates results without add
         assert.equal(row.process_name, '');
         assert.equal(reader.prepare('PRAGMA user_version').get()!.user_version, 2);
       } finally { reader.close(); }
+      assert.equal(store.get('old-card')?.resultText, '', 'history can read legacy records without a result');
+      assert.equal(store.list(0).items[0].createdAt, originalTime);
       store.save('old-card', '原文', '初次结果', 'notepad.exe');
       store.save('old-card', '原文', '重试后的结果', 'notepad.exe');
       assert.throws(() => store.save('old-card', '另一段原文', '无效结果', 'other.exe'));
@@ -161,6 +163,34 @@ test('schema upgrade preserves old records and retry updates results without add
   } finally { unlinkSync(filename); rmdirSync(folder); }
 });
 
+test('history pages use bounded previews, stable newest-first ordering and exact detail reads', () => {
+  const folder = mkdtempSync(path.resolve('work', 'history-test-'));
+  const filename = path.join(folder, 'records.sqlite');
+  const store = new RecordStore(filename);
+  try {
+    assert.deepEqual(store.list(0), { items: [], total: 0, page: 0, pageSize: 20 });
+    assert.equal(store.get('missing'), undefined);
+    for (let i = 0; i < 25; i++) store.save(`record-${String(i).padStart(2, '0')}`, '原文🙂\n'.repeat(100), `结果 ${i}\n` + '内容'.repeat(1000), 'editor.exe');
+    const db = new DatabaseSync(filename);
+    try {
+      db.exec("UPDATE records SET created_at = '2026-09-18T01:00:00.000Z'");
+      db.prepare('UPDATE records SET created_at = ? WHERE id = ?').run('2026-09-19T01:00:00.000Z', 'record-00');
+    } finally { db.close(); }
+    const first = store.list(0), second = store.list(1);
+    assert.equal(first.total, 25); assert.equal(first.items.length, 20); assert.equal(second.items.length, 5);
+    assert.equal(first.items[0].id, 'record-00', 'timestamp takes precedence over ID');
+    assert.equal(first.items[1].id, 'record-24', 'ties have stable ID ordering');
+    assert.equal(new Set([...first.items, ...second.items].map(row => row.id)).size, 25, 'pages have no duplicates or gaps');
+    assert.ok(first.items.every(row => [...row.preview].length <= 120 && !('resultText' in row)));
+    assert.deepEqual(store.list(999), second, 'out-of-range pages resolve to the last page');
+    assert.equal(store.get('record-00')?.originalText, '原文🙂\n'.repeat(100));
+    assert.equal(store.get('record-00')?.resultText, '结果 0\n' + '内容'.repeat(1000));
+    assert.equal(store.get("' OR 1=1 --"), undefined);
+    for (const value of [-1, 0.5, NaN, Infinity, 1_000_001, '0', null]) assert.throws(() => store.list(value as number));
+    for (const value of ['', 'x'.repeat(257), null, 1]) assert.throws(() => store.get(value as string));
+  } finally { store.close(); unlinkSync(filename); rmdirSync(folder); }
+});
+
 test('reject invalid endpoint protocols and embedded credentials before saving', () => {
   for (const url of ['file:///C:/secret', 'javascript:alert(1)', 'https://user:password@example.org/v1']) {
     const input = structuredClone(defaults); input.provider.baseUrl = url;
@@ -177,6 +207,50 @@ test('reject duplicate IDs and a toolbar with no enabled actions', () => {
   const disabled = structuredClone(defaults); disabled.actions.forEach(a => { a.enabled = false; });
   assert.throws(() => validateSettings(disabled), /至少启用/);
 });
+test('retired copy actions migrate without losing custom actions or unrelated settings', () => {
+  const custom = { ...defaults.actions[0], id: 'copy', name: '我的指令', prompt: '自定义 {text}' };
+  const retired = { id: 'custom-copy', name: '旧复制', icon: 'copy', kind: 'copy', prompt: '', enabled: true };
+  const input = { ...structuredClone(defaults), theme: 'dark', provider: { baseUrl: 'http://localhost:8080/v1', model: 'my-model' }, actions: [custom, retired, defaults.actions[3]] };
+  const migrated = migrateSettings(input);
+  assert.deepEqual(migrated.actions, [custom, defaults.actions[3]], 'remove by type, not name or ID');
+  assert.deepEqual(migrated.provider, input.provider);
+  assert.equal(migrated.theme, 'dark');
+  assert.equal(input.actions.length, 3, 'migration does not mutate the source');
+  assert.deepEqual(migrateSettings(migrated), migrated, 'migration is idempotent');
+  assert.throws(() => validateSettings(input), /动作配置无效/, 'saving cannot reintroduce the copy type');
+  assert.deepEqual(migrateSettings({ ...input, actions: [retired] }).actions, defaults.actions);
+  assert.equal(migrateSettings({ ...input, actions: [{ ...custom, enabled: false }, retired] }).actions[0].enabled, true);
+  assert.throws(() => migrateSettings({ ...input, actions: [{ ...custom, kind: 'unknown' }, retired] }), /动作配置无效/);
+});
+
+test('legacy actions receive stable unique English names without changing IDs or prompts', () => {
+  const legacy = { ...structuredClone(defaults), actions: defaults.actions.map(({ englishName, ...action }) => action) };
+  legacy.actions.push({ ...legacy.actions[0], id: 'custom-one', name: '总结' });
+  legacy.actions.push({ ...legacy.actions[0], id: 'custom-two', name: '总结' });
+  const migrated = migrateSettings(legacy);
+  assert.deepEqual(migrated.actions.map(action => action.englishName), ['translation', 'explanation', 'polishing', 'search', 'action_user_1', 'action_user_2']);
+  assert.deepEqual(migrated.actions.map(({ englishName, ...action }) => action), legacy.actions);
+  assert.deepEqual(migrateSettings(migrated), migrated);
+  assert.equal(recordFilename(migrated.actions[0].englishName), 'translations.sqlite');
+  assert.equal(recordFilename(migrated.actions[2].englishName), 'polishing.sqlite');
+  assert.equal(recordFilename('summary'), 'summary.sqlite');
+});
+
+test('English names cannot escape the data directory, collide, or change after saving', () => {
+  for (const name of ['', '../escape', 'C:\\escape', 'UPPER', 'a.b', 'a/b', 'a\\b', 'con', 'nul', 'com1', 'lpt9', 'translations', 'a'.repeat(49)]) {
+    assert.equal(validEnglishName(name), false, name);
+    assert.throws(() => recordFilename(name));
+    const input = structuredClone(defaults); input.actions[0].englishName = name;
+    assert.throws(() => validateSettings(input), /英文名称/);
+  }
+  const duplicate = structuredClone(defaults); duplicate.actions[1].englishName = 'translation';
+  assert.throws(() => validateSettings(duplicate), /英文名称/);
+  const renamed = structuredClone(defaults); renamed.actions[0].name = '我的翻译';
+  assert.doesNotThrow(() => validateActionNames(renamed, defaults));
+  renamed.actions[0].englishName = 'another';
+  assert.throws(() => validateActionNames(renamed, defaults), /不可修改/);
+});
+
 test('normalization keeps user intent and does not mutate the draft', () => {
   const input = structuredClone(defaults); input.excludedApps = [' WPS.exe ', 'wps.exe'];
   const result = validateSettings(input);
