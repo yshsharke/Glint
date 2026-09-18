@@ -15,8 +15,8 @@ jobs:
           curl --fail --silent --show-error --location \
             -H "Authorization: Bearer $GH_TOKEN" \
             https://api.github.com/repos/yshsharke/Glint/actions/jobs/105502450450/logs -o failed.log
-          tail -n 70 failed.log | while IFS= read -r line; do
-            line="${line//'%'/'%25'}"
-            line="${line//$'\r'/'%0D'}"
-            printf '::notice::%s\n' "$line"
-          done
+          message="$(tail -n 90 failed.log)"
+          message="${message//'%'/'%25'}"
+          message="${message//$'\r'/'%0D'}"
+          message="${message//$'\n'/'%0A'}"
+          printf '::notice::%s\n' "$message"
