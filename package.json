@@ -1,0 +1,31 @@
+{
+  "name": "glint",
+  "productName": "Glint",
+  "version": "0.1.0",
+  "private": true,
+  "license": "MIT",
+  "engines": { "node": "24.x" },
+  "description": "A small, customizable selection assistant for Windows.",
+  "main": "dist/main.cjs",
+  "scripts": {
+    "setup:electron": "node node_modules/electron/install.js",
+    "build": "node scripts/build.mjs",
+    "start": "npm run build && node scripts/launch.mjs",
+    "dev": "npm start",
+    "typecheck": "tsc --noEmit",
+    "test": "node scripts/test.mjs",
+    "check": "npm run typecheck && npm test && npm run build",
+    "smoke": "npm run build && node scripts/launch.mjs --smoke"
+  },
+  "dependencies": {
+    "selection-hook": "2.1.1"
+  },
+  "devDependencies": {
+    "@resvg/resvg-js": "2.6.2",
+    "@types/node": "^24.0.0",
+    "electron": "44.4.2",
+    "esbuild": "0.28.2",
+    "lucide-static": "1.47.0",
+    "typescript": "5.9.3"
+  }
+}

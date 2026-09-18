@@ -1,0 +1,32 @@
+name: 缺陷报告
+description: 报告可复现的问题，请勿提交密钥或真实划词内容。
+title: '[Bug] '
+body:
+  - type: markdown
+    attributes:
+      value: '安全漏洞请先阅读 SECURITY.md。截图和日志必须去除个人信息，优先使用演示文字复现。'
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境
+      description: Windows 版本、Glint 版本或提交、Node.js 版本；取词问题请补充目标应用及版本、是否以管理员运行。
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 使用不含隐私的示例文字，说明自动划词还是快捷键、是否开启剪贴板回退。
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: 预期与实际结果
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 可选截图与诊断
+      description: 仅粘贴脱敏后的相关片段，不上传 settings.json、数据库、完整用户目录或 API Key。

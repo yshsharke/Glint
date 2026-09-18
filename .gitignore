@@ -1,0 +1,24 @@
+node_modules/
+dist/
+work/
+*.log
+.env
+.env.*
+!.env.example
+
+# Local profiles, credentials, databases and exports must never be published.
+settings.json
+Local State
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+*.log.*
+*.pem
+*.key
+*.pfx
+*.p12
+coverage/
+release/
+.DS_Store
+Thumbs.db
