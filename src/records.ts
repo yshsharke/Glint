@@ -59,6 +59,11 @@ export class RecordStore {
       process_name AS processName, created_at AS createdAt FROM records WHERE id = ?`).get(id) as unknown as SavedRecord | undefined;
   }
 
+  delete(id: string): boolean {
+    if (typeof id !== 'string' || !id || id.length > 256) throw new Error('记录 ID 无效。');
+    return this.db.prepare('DELETE FROM records WHERE id = ?').run(id).changes > 0;
+  }
+
   migrateFrom(legacyPath: string): number | undefined {
     const source = path.resolve(legacyPath);
     if (!existsSync(source) || this.db.prepare('SELECT source FROM migration_history WHERE source = ?').get(source)) return undefined;

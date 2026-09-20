@@ -6,7 +6,11 @@ import { buildLicenses, buildFrontendLicenses } from './licenses.mjs';
 const { version } = JSON.parse(await readFile(new URL('../package.json', import.meta.url), 'utf8'));
 await mkdir('dist', { recursive: true });
 await Promise.all([
-  build({ entryPoints: ['src/main.ts'], outfile: 'dist/main.cjs', bundle: true, platform: 'node', format: 'cjs', external: ['electron', 'selection-hook'], target: 'node22', sourcemap: true }),
+  build({ entryPoints: ['src/main.ts'], outfile: 'dist/main.cjs', bundle: true, platform: 'node', format: 'cjs', external: ['electron', 'selection-hook'], target: 'node22', sourcemap: true, metafile: true,
+    define: { GLINT_TEST_BUILD: 'false', GLINT_ASSET_DIR: 'undefined' } })
+    .then(result => {
+      if (Object.keys(result.metafile.inputs).some(file => file.replaceAll('\\', '/').startsWith('tests/'))) throw new Error('Test scenarios must not enter the production build');
+    }),
   build({ entryPoints: ['src/selection-host.ts'], outfile: 'dist/selection-host.cjs', bundle: true, platform: 'node', format: 'cjs', external: ['electron', 'selection-hook'], target: 'node22', sourcemap: true }),
   build({ entryPoints: ['src/preload.ts'], outfile: 'dist/preload.cjs', bundle: true, platform: 'node', format: 'cjs', external: ['electron'], target: 'node22' }),
   build({ entryPoints: ['src/renderer.tsx'], outfile: 'dist/renderer.js', bundle: true, platform: 'browser', format: 'iife', target: 'chrome120', minify: true, metafile: true, sourcemap: true, define: { 'process.env.NODE_ENV': '"production"', GLINT_ICON_NAMES: JSON.stringify(iconNames), GLINT_APP_VERSION: JSON.stringify(version) } })

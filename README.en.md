@@ -58,7 +58,7 @@ Use `{text}` in an action prompt to insert the selected text. For example:
 
 Results stream into a separate card. Stop a response, retry it or copy it with one click. The header shows the action and source app; expand the original text to review it.
 
-Every **指令 (Instruction)** action—including Translate, Explain, Polish and your own actions—offers **记录 (Save)** to store the original text, result and source process in its own local database. Saving again after a retry updates the same record. In **历史 (History)**, switch between actions to browse records by date, review the original and result, and copy either one. Disabled actions remain available in History. History browsing and records for custom actions are available from 0.3.0; search is not yet supported.
+Every **指令 (Instruction)** action—including Translate, Explain, Polish and your own actions—offers **记录 (Save)** to store the original text, result and source process in its own local database. Saving again after a retry updates the same record. In **历史 (History)**, switch between actions to browse records by date. The original and result appear in stacked panes that scroll independently; use the header buttons to copy either text or delete the current record. Disabled actions remain available in History. Search is not yet supported.
 
 ## Your data
 
@@ -68,7 +68,7 @@ API keys are encrypted using Windows system protection. Manually saved text and 
 
 ## Common questions
 
-**No toolbar after selecting text?** Try `Ctrl + Alt + G`, check excluded apps in **触发 (Triggers)** and the engine status in **诊断 (Diagnostics)**. Some PDFs, terminals, protected or elevated windows do not expose accessible text. OCR is not supported, and selection cannot be guaranteed in every app.
+**No toolbar after selecting text?** Keep the pointer in the window containing the selection and try `Ctrl + Alt + G`, then check excluded apps in **触发 (Triggers)** and the engine status in **诊断 (Diagnostics)**. Some PDFs, terminals, protected or elevated windows do not expose accessible text. OCR is not supported, and selection cannot be guaranteed in every app.
 
 **Model connection failed?** Check the API URL, port, model name and key. A local service may use `http://` instead of `https://`. There is no built-in proxy configuration, and Windows system proxy settings are not guaranteed to apply.
 

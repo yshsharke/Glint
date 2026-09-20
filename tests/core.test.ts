@@ -191,6 +191,37 @@ test('history pages use bounded previews, stable newest-first ordering and exact
   } finally { store.close(); unlinkSync(filename); rmdirSync(folder); }
 });
 
+test('deleting a record is isolated, persistent and clamps an emptied last page', () => {
+  const folder = mkdtempSync(path.resolve('work', 'history-delete-test-'));
+  const filename = path.join(folder, 'records.sqlite');
+  const otherFilename = path.join(folder, 'other.sqlite');
+  const store = new RecordStore(filename), other = new RecordStore(otherFilename);
+  try {
+    for (let i = 0; i < 21; i++) store.save(`record-${i}`, `原文 ${i}`, `结果 ${i}`, 'editor.exe');
+    const lastId = store.list(1).items[0].id;
+    other.save(lastId, '另一动作的原文', '另一动作的结果', 'editor.exe');
+    for (const id of ['', 'x'.repeat(257), null, 1]) assert.throws(() => store.delete(id as string));
+    assert.equal(store.delete("' OR 1=1 --"), false);
+    assert.equal(store.list(0).total, 21);
+    const lock = new DatabaseSync(filename);
+    try {
+      lock.exec('BEGIN IMMEDIATE');
+      assert.throws(() => store.delete(lastId), /locked/);
+      assert.ok(store.get(lastId), 'failed deletion keeps the record');
+    } finally { lock.exec('ROLLBACK'); lock.close(); }
+    assert.equal(store.delete(lastId), true);
+    assert.equal(store.delete(lastId), false, 'repeat deletion is harmless');
+    assert.equal(store.get(lastId), undefined);
+    assert.ok(other.get(lastId), 'same ID in another action remains intact');
+    assert.equal(store.list(1).page, 0);
+    assert.equal(store.list(1).total, 20);
+    const reopened = new RecordStore(filename);
+    try { assert.equal(reopened.get(lastId), undefined); } finally { reopened.close(); }
+    for (const row of store.list(0).items) store.delete(row.id);
+    assert.deepEqual(store.list(1), { items: [], total: 0, page: 0, pageSize: 20 });
+  } finally { store.close(); other.close(); unlinkSync(filename); unlinkSync(otherFilename); rmdirSync(folder); }
+});
+
 test('reject invalid endpoint protocols and embedded credentials before saving', () => {
   for (const url of ['file:///C:/secret', 'javascript:alert(1)', 'https://user:password@example.org/v1']) {
     const input = structuredClone(defaults); input.provider.baseUrl = url;

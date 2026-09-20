@@ -8,10 +8,10 @@
 npm ci
 npm run setup:electron
 npm run check
+npm run smoke
 npm run package
 npm run package:verify
 npm run package:verify-installer
-npm run smoke:packaged
 ```
 
 - `release/Glint-<version>-windows-x64-setup.exe`：当前用户安装，可选择目录，创建开始菜单入口，支持卸载。
@@ -21,7 +21,11 @@ npm run smoke:packaged
 
 构建只包含白名单应用资源、生产依赖和许可；selection-hook 的 Windows x64 原生模块放在 `app.asar.unpacked`，不要改成随意打包整个项目目录。默认关闭代码签名，保留 exe 图标和版本信息。
 
-`package:verify` 检查归档、原生模块和许可，并分别启动应用与 portable，确认引擎、preload 接口及 SQLite 可用。这项启动检查不要求 UIA 文本选区；完整的 `smoke:packaged` 需在交互式桌面执行，存在已记录的间歇性 UIA 失败，不能把启动检查当成全面兼容性测试。
+`npm run verify:release` 串行执行代码检查、完整 smoke、构建和打包启动验证；安装与卸载验证仍需在没有安装 Glint 的干净 Windows 账户中单独运行。
+
+`smoke` 使用单独编译到 `work/` 的测试入口，依次运行设置界面、记录与本地模型、原生取词三组测试。每组使用独立临时配置和数据库；某组失败不会阻止其余组执行，任一组失败则整体失败。也可分别运行 `smoke:ui`、`smoke:records`、`smoke:native`。结果及测试目录见 `work/smoke-summary.json`。系统取词测试需要交互式 Windows 桌面。
+
+`package:verify` 检查归档、原生模块和许可，并分别启动应用与 portable，确认引擎、preload 接口及 SQLite 可用。正式包只保留最小启动自检，不携带完整测试场景；原先的 `smoke:packaged` 已由开发测试和打包自检分别替代。打包启动验证不能替代完整 smoke 或第三方应用的手动兼容性检查。
 
 ## GitHub Release
 

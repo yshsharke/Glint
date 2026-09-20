@@ -22,7 +22,7 @@ npm run check
 npm run smoke
 ```
 
-`check` 包含 TypeScript 检查、核心行为测试和资源构建；GitHub Actions 在 Windows 上运行它。`smoke` 启动独立 Electron 实例，使用本地假模型和隔离配置，不依赖真实 API Key。它会打开测试窗口，截图、报告、数据库写入忽略的 `work/` 目录。运行时避免操作测试窗口；UI Automation 受桌面会话和焦点影响，失败时先查看报告，不应仅反复重试以掩盖问题。普通 CI 不运行需要交互桌面的测试。
+`check` 包含 TypeScript 检查、核心逻辑与设置状态测试和资源构建。GitHub Actions 在 Windows 上运行它及 `smoke:records`。`smoke` 将设置界面、记录/本地模型和原生取词分为三个独立 Electron 场景，每组使用隔离配置，不依赖真实 API Key。截图、报告、数据库写入忽略的 `work/` 目录；可用 `smoke:ui`、`smoke:records`、`smoke:native` 单独执行，最近一次调用的汇总见 `work/smoke-summary.json`。运行时避免操作测试窗口；UI Automation 受桌面会话和焦点影响，失败时先查看报告，不应仅反复重试以掩盖问题。普通 CI 不运行需要交互桌面的 UIA 测试。
 
 已观察到原生 UIA 受控选区读取间歇性失败，原因尚未确认；再次运行成功不代表该问题已修复。
 
@@ -32,12 +32,11 @@ npm run smoke
 npm run package
 npm run package:verify
 npm run package:verify-installer
-npm run smoke:packaged
 ```
 
 `package` 使用 electron-builder 生成 Windows x64 安装版、单文件 portable 和 SHA-256 校验文件，输出到忽略的 `release/`。`package:verify` 检查归档内容和原生模块解包，并真实启动打包应用与 portable，验证取词引擎、沙箱接口和 SQLite 初始化，不依赖桌面选区。
 
-`smoke:packaged` 对两种启动方式执行完整桌面烟雾测试（包含 UIA、流式模型与记录流程），需要交互式 Windows 会话。测试在 `work/packaged-check-*` 下使用隔离配置；不会写入真实用户资料。更多内容见 [发布流程](docs/RELEASING.md)。
+完整测试场景独立编译到 `work/`，不再随正式包分发；原 `smoke:packaged` 已替换为开发 smoke 和打包启动自检两部分。`npm run verify:release` 依次执行代码检查、完整 smoke、打包和打包自检，任一步失败都会返回失败。更多内容见 [发布流程](docs/RELEASING.md)。
 
 `package:verify-installer` 临时安装到 `work/installer-check-*`，验证开始菜单入口与应用启动后卸载，检查注册项清理。它会暂时添加当前用户的安装注册项和快捷方式，因此检测到已有安装版 Glint 时会拒绝运行；可使用干净 Windows 用户或 GitHub 的临时 runner。
 
@@ -45,7 +44,7 @@ npm run smoke:packaged
 
 ## 设计边界
 
-界面使用 React 与官方 Fluent UI React v9（`src/renderer.tsx`）。CSS 主要负责 Glint 的紧凑布局；控件交互、焦点和主题使用 Fluent，避免重新模拟原生控件。额外的官方动效预设集中在 `src/ui/motion.ts`，其 preview 依赖固定版本，升级时需要检查。前端库作为构建依赖打入 `dist/renderer.js`，不额外分发完整的前端 `node_modules`。
+界面使用 React 与官方 Fluent UI React v9，入口为 `src/renderer.tsx`，页面、组件和状态管理位于 `src/ui/`，具体边界见 [架构说明](docs/ARCHITECTURE.md)。CSS 主要负责 Glint 的紧凑布局；控件交互、焦点和主题使用 Fluent，避免重新模拟原生控件。额外的官方动效预设集中在 `src/ui/motion.ts`，其 preview 依赖固定版本，升级时需要检查。前端库作为构建依赖打入 `dist/renderer.js`，不额外分发完整的前端 `node_modules`。
 
 - 原生取词留在 utility process 中，避免 UIA 阻塞主线程。
 - 渲染进程保持 sandbox、context isolation 和最小 preload 接口。
