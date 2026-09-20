@@ -6,8 +6,17 @@ directories:
 asar: true
 npmRebuild: false
 files:
-  - dist/**/*
-  - '!dist/**/*.map'
+  - dist/main.cjs
+  - dist/preload.cjs
+  - dist/selection-host.cjs
+  - dist/renderer.js
+  - dist/index.html
+  - dist/styles.css
+  - dist/icons.css
+  - dist/icon-catalog.js
+  - dist/icons/*.svg
+  - dist/brand/**
+  - dist/licenses/**
   - package.json
   - LICENSE
   - THIRD_PARTY_NOTICES.md

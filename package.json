@@ -1,7 +1,7 @@
 {
   "name": "glint",
   "productName": "Glint",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "private": true,
   "license": "MIT",
   "author": "Glint contributors",
@@ -26,11 +26,14 @@
     "typecheck": "tsc --noEmit",
     "test": "node scripts/test.mjs",
     "check": "npm run typecheck && npm test && npm run build",
-    "smoke": "npm run build && node scripts/launch.mjs --smoke",
+    "smoke": "npm run build && node scripts/smoke.mjs",
+    "smoke:ui": "npm run build && node scripts/smoke.mjs ui",
+    "smoke:records": "npm run build && node scripts/smoke.mjs records",
+    "smoke:native": "npm run build && node scripts/smoke.mjs native",
     "package": "npm run build && electron-builder --win --x64 --publish never && node scripts/checksums.mjs",
     "package:verify": "node scripts/verify-package.mjs",
     "package:verify-installer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-installer.ps1",
-    "smoke:packaged": "node scripts/verify-package.mjs --smoke"
+    "verify:release": "npm run check && npm run smoke && npm run package && npm run package:verify"
   },
   "dependencies": {
     "selection-hook": "2.1.1"

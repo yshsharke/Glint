@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { existsSync, readFileSync, mkdtempSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
-import { listPackage } from '@electron/asar';
+import { extractFile, listPackage } from '@electron/asar';
 
 process.on('uncaughtException', error => {
   console.error(error);
@@ -16,6 +16,8 @@ process.on('uncaughtException', error => {
 const { version } = JSON.parse(readFileSync('package.json', 'utf8'));
 const archive = 'release/win-unpacked/resources/app.asar';
 const entries = listPackage(archive).map(name => name.replaceAll('\\', '/'));
+const main = extractFile(archive, 'dist/main.cjs').toString('utf8');
+assert.ok(!main.includes('Glint native selection fixture') && !main.includes('smoke_summary') && !main.includes('runSettingsSmoke'), 'Full test scenarios must not ship in the application');
 for (const name of ['/dist/main.cjs', '/dist/preload.cjs', '/dist/renderer.js', '/dist/brand/glint.ico', '/dist/licenses/selection-hook-LICENSE', '/dist/licenses/lucide-LICENSE', '/dist/licenses/LICENSES.chromium.html']) {
   assert.ok(entries.includes(name), `Missing packaged file: ${name}`);
 }
@@ -36,12 +38,12 @@ const shortPath = spawnSync('powershell', ['-NoProfile', '-Command', '(New-Objec
   env: { ...process.env, GLINT_PACKAGE_DIR: path.resolve('release/win-unpacked') }, encoding: 'utf8', windowsHide: true
 });
 assert.equal(shortPath.status, 0, 'Could not resolve Windows short path');
-if (!process.argv.includes('--smoke') && shortPath.stdout.includes('~')) executables.push(path.join(shortPath.stdout.trim(), 'Glint.exe'));
+if (shortPath.stdout.includes('~')) executables.push(path.join(shortPath.stdout.trim(), 'Glint.exe'));
 for (const file of executables) {
   const folder = mkdtempSync(path.resolve('work', 'packaged-check-'));
   const env = { ...process.env, GLINT_SMOKE_ROOT: folder };
   delete env.ELECTRON_RUN_AS_NODE;
-  const child = spawn(path.resolve(file), [process.argv.includes('--smoke') ? '--smoke' : '--package-check'], { env, stdio: 'inherit', windowsHide: true });
+  const child = spawn(path.resolve(file), ['--package-check'], { env, stdio: 'inherit', windowsHide: true });
   const timer = setTimeout(() => {
     // Only terminate the process tree created by this verification run.
     if (child.pid) spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
@@ -52,6 +54,6 @@ for (const file of executables) {
   const report = JSON.parse(readFileSync(path.join(folder, 'work', 'smoke-success.json'), 'utf8'));
   assert.equal(report.packaged, true);
   assert.equal(report.version, version);
-  assert.equal(report.check, process.argv.includes('--smoke') ? 'full' : 'startup');
+  assert.equal(report.check, 'startup');
   console.log(`Verified ${path.basename(file)} (${report.check}).`);
 }

@@ -29,5 +29,6 @@ jobs:
       - run: npm ci
       - run: npm run setup:electron
       - run: npm run check
+      - run: node scripts/smoke.mjs records
       # UI Automation smoke tests need an interactive Windows desktop.
       # Run npm run smoke locally before releases and for UI/IPC/native changes.

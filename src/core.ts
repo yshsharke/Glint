@@ -40,7 +40,7 @@ export function validateActionNames(next: Settings, previous: Settings): void {
   }
 }
 export interface ResultState { id: string; recorded: boolean; recordKind?: RecordKind; actionName: string; actionIcon: string; text: string; source: string; app: string; busy: boolean; error?: string; demo: boolean }
-export type UIEvent = { type: 'snapshot'; snapshot: Snapshot } | { type: 'result'; result: ResultState } | { type: 'settings-window'; maximized: boolean } | { type: 'records-changed'; kind: RecordKind };
+export type UIEvent = { type: 'snapshot'; snapshot: Snapshot } | { type: 'result'; result: ResultState } | { type: 'settings-window'; maximized: boolean } | { type: 'records-changed'; kind: RecordKind; deletedId?: string };
 export interface GlintAPI {
   snapshot(): Promise<Snapshot>;
   save(settings: Settings, keyUpdate?: string): Promise<{ ok: boolean; error?: string }>;
@@ -57,6 +57,7 @@ export interface GlintAPI {
   listRecords(kind: RecordKind, page: number): Promise<RecordPage>;
   getRecord(kind: RecordKind, id: string): Promise<SavedRecord | undefined>;
   copyRecord(kind: RecordKind, id: string, field: 'original' | 'result'): Promise<boolean>;
+  deleteRecord(kind: RecordKind, id: string): Promise<boolean>;
   restart(): Promise<void>;
   quit(): Promise<void>;
   subscribe(callback: (event: UIEvent) => void): () => void;

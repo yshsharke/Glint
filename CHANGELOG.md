@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.4.0 — 2026-09-20（预览版）
+
+- 历史记录支持单条删除；详情采用独立滚动的上下两栏，顶部集中提供复制原文、复制结果和删除按钮。
+- 动作、触发、诊断页面充分利用窗口高度；优化结果卡片按钮间距、原文展开按钮和请求中的圆点动画。
+- 拆分界面组件，集中管理设置草稿、保存和撤销，统一图标与 IPC 类型约束。
+- 完整测试从正式构建中分离，按界面、记录/模型与原生取词分组；补充状态回归测试和发布验证入口。
+- 修正原生取词测试的鼠标目标定位，检查真实 UIA 取词及来源进程，避免桌面焦点与鼠标位置不一致造成误报。
+
+- Delete individual history entries; read source and result in independently scrollable panes with header actions.
+- Improve full-height settings layouts, result-card button spacing, source toggle styling, and loading dots.
+- Separate UI components and centralize settings draft/save/revert state, shared icons, and typed IPC contracts.
+- Keep full test scenarios out of production builds; add isolated smoke groups, state regression tests, and a release verification command.
+- Position the native test fixture under the OS pointer and verify UIA capture and source-process metadata to avoid failures caused by mismatched focus and pointer targets.
+
 ## 0.3.0 — 2026-09-18（预览版）
 
 - 移除浮条复制动作，动作类型统一为「指令」「搜索」；升级时自动清理旧复制动作，保留结果卡片和历史记录的复制功能。

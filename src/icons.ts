@@ -12,13 +12,6 @@ export function iconName(name: string): string {
   const normalized = names.has(name) ? name : aliases[name] || name;
   return names.has(normalized) ? normalized : 'sparkles';
 }
-export function icon(name: string): string {
-  return '<span class="icon lucide-' + iconName(name) + '" aria-hidden="true"></span>';
-}
-export function brandIcon(): string {
-  return '<span class="icon glint-mark" aria-hidden="true"></span>';
-}
-
 const favorites = [
   'languages', 'sparkles', 'pen', 'search', 'copy', 'clipboard', 'book-open', 'file-text',
   'text-quote', 'spell-check', 'list', 'list-checks', 'code', 'terminal', 'braces', 'regex',
