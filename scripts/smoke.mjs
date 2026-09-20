@@ -1,7 +1,7 @@
 import { build } from 'esbuild';
 import { spawn, spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 const require = createRequire(import.meta.url);
@@ -27,6 +27,12 @@ for (const scenario of scenarios) {
     child.once('error', reject); child.once('exit', resolve);
   }).finally(() => clearTimeout(timer));
   reports.push({ scenario, passed: code === 0, profile });
+  if (code !== 0 && process.env.GITHUB_ACTIONS === 'true') {
+    const errorFile = path.join(profile, 'work', 'smoke-error.txt');
+    const detail = existsSync(errorFile) ? readFileSync(errorFile, 'utf8') : `Electron exited with code ${code} before writing a failure report.`;
+    const message = `${scenario} smoke: ${detail}`.replaceAll('%', '%25').replaceAll('\r', '%0D').replaceAll('\n', '%0A');
+    console.log(`::error title=Electron smoke failed::${message}`);
+  }
 }
 writeFileSync('work/smoke-summary.json', JSON.stringify(reports, null, 2));
 console.log(reports.map(report => `${report.scenario}: ${report.passed ? 'passed' : 'FAILED'}`).join('\n'));
