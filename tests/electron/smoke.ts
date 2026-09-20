@@ -339,15 +339,29 @@ async function runRecordsSmoke(runtime: ApplicationRuntime) {
     await wait(150);
     assert.equal(await runtime.setup!.webContents.executeJavaScript("document.querySelector('[data-history-original]').textContent"), runtime.result!.source);
     assert.equal(await runtime.setup!.webContents.executeJavaScript("document.querySelector('[data-history-result]').textContent"), runtime.result!.text);
-    const previousClipboard = await Promise.all((await clipboard.read()).map(async item => new ClipboardItem(
-      Object.fromEntries(await Promise.all(item.types.map(async type => [type, await item.getType(type)])))
-    )));
+    // Windows can return an item with no MIME types for an empty clipboard.
+    // Materialize readable payloads before the copy checks overwrite the clipboard,
+    // but never pass an empty data map to the ClipboardItem constructor.
+    const snapshotClipboard = async () => Promise.all((await clipboard.read())
+      .filter(item => item.types.length > 0)
+      .map(async item => new ClipboardItem(Object.fromEntries(
+        await Promise.all(item.types.map(async type => [type, await item.getType(type)]))
+      ))));
+    const restoreClipboard = async (items: ClipboardItem[]) => {
+      if (items.length) await clipboard.write(items); else await clipboard.clear();
+    };
+    const previousClipboard = await snapshotClipboard();
     try {
+      await clipboard.clear();
+      const emptyClipboard = await snapshotClipboard();
+      assert.equal(emptyClipboard.length, 0, 'empty clipboard snapshots must not construct empty ClipboardItems');
       await ui("document.querySelector('[data-history-copy=result]').click()");
       assert.equal(await clipboard.readText(), runtime.result!.text, 'history copies the stored result');
       await ui("document.querySelector('[data-history-copy=original]').click()");
       assert.equal(await clipboard.readText(), runtime.result!.source, 'history copies the original');
-    } finally { if (previousClipboard.length) await clipboard.write(previousClipboard); else await clipboard.clear(); }
+      await restoreClipboard(emptyClipboard);
+      assert.equal((await snapshotClipboard()).length, 0, 'restoring an empty snapshot clears copied text');
+    } finally { await restoreClipboard(previousClipboard); }
     await fs.promises.writeFile(path.join(folder, 'history.png'), (await runtime.setup!.webContents.capturePage()).toPNG());
     for (const kind of ['translation', 'polishing']) {
       const db = new DatabaseSync(runtime.recordPath(kind), { readOnly: true });
