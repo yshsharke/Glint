@@ -21,6 +21,8 @@ files:
   - LICENSE
   - THIRD_PARTY_NOTICES.md
   - '!node_modules/selection-hook/prebuilds/{darwin-*,linux-*,win32-arm64}/**'
+  - '!node_modules/selection-hook/build/**'
+  - '!node_modules/selection-hook/glint-native.json'
 asarUnpack:
   - node_modules/selection-hook/**
   - node_modules/node-gyp-build/**

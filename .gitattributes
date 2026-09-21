@@ -1,3 +1,5 @@
 * text=auto eol=lf
 *.png binary
 *.ico binary
+# Unified diffs preserve upstream whitespace and blank context lines.
+*.patch whitespace=-blank-at-eol

@@ -1,0 +1,324 @@
+diff --git a/index.js b/index.js
+index 026c077..c6ec03d 100644
+--- a/index.js
++++ b/index.js
+@@ -407,6 +407,18 @@ class SelectionHook extends EventEmitter {
+    * @param {boolean} passive - Passive mode
+    * @returns {boolean} Success status
+    */
++  // Glint Windows extension: skip accessibility retrieval entirely.
++  setClipboardOnly(enabled) {
++    if (!this.#checkInstance()) return false;
++    try {
++      this.#instance.setClipboardOnly(enabled);
++      return true;
++    } catch (err) {
++      this.#handleError("Failed to set clipboard-only mode", err);
++      return false;
++    }
++  }
++
+   setSelectionPassiveMode(passive) {
+     if (!this.#checkInstance()) return false;
+ 
+@@ -620,6 +632,7 @@ class SelectionHook extends EventEmitter {
+       mousePosEnd: { x: data.mouseEndX, y: data.mouseEndY },
+       method: data.method || 0,
+       posLevel: data.posLevel || 0,
++      historyCleanup: data.historyCleanup ?? -1,
+     };
+ 
+     if (isMac) {
+diff --git a/index.d.ts b/index.d.ts
+index 437a982..45704da 100644
+--- a/index.d.ts
++++ b/index.d.ts
+@@ -50,6 +50,8 @@ export interface TextSelectionData {
+   posLevel: (typeof SelectionHook.PositionLevel)[keyof typeof SelectionHook.PositionLevel];
+   /** Whether the current app's front window is in fullscreen mode, macOS only */
+   isFullscreen?: boolean;
++  /** Glint Windows metadata: -1 unused, 0 unavailable, 1 no match, 2 removed, 3 skipped. */
++  historyCleanup?: number;
+ }
+ 
+ /**
+@@ -401,6 +403,9 @@ declare class SelectionHook extends EventEmitter {
+    */
+   setSelectionPassiveMode(passive: boolean): boolean;
+ 
++  /** Glint Windows extension; still respects clipboard enablement and app exclusions. */
++  setClipboardOnly(enabled: boolean): boolean;
++
+   /**
+    * Write text to clipboard
+    *
+diff --git a/src/windows/core/types.h b/src/windows/core/types.h
+index 9f3bff9..47ab32f 100644
+--- a/src/windows/core/types.h
++++ b/src/windows/core/types.h
+@@ -106,6 +106,7 @@ struct TextSelectionInfo
+     POINT mousePosStart;  ///< Mouse position where selection started.
+     POINT mousePosEnd;    ///< Mouse position where selection ended.
+ 
++    int historyCleanup = -1;
+     SelectionMethod method;
+     SelectionPositionLevel posLevel;
+ 
+@@ -129,6 +130,7 @@ struct TextSelectionInfo
+         endBottom.x = endBottom.y = 0;
+         mousePosStart.x = mousePosStart.y = 0;
+         mousePosEnd.x = mousePosEnd.y = 0;
++        historyCleanup = -1;
+         method = SelectionMethod::None;
+         posLevel = SelectionPositionLevel::None;
+     }
+@@ -144,6 +146,7 @@ struct TextSelectionInfo
+ struct SelectionConfigSnapshot
+ {
+     bool clipboardEnabled = true;
++    bool clipboardOnly = false; // Glint Windows extension.
+     bool triggeredByUser = false;
+     FilterMode clipboardFilterMode = FilterMode::Default;
+     std::vector<std::string> clipboardFilterList;
+diff --git a/src/windows/selection_hook.cc b/src/windows/selection_hook.cc
+index 8625e9d..fd0fe25 100644
+--- a/src/windows/selection_hook.cc
++++ b/src/windows/selection_hook.cc
+@@ -169,6 +169,7 @@ class SelectionHook : public Napi::ObjectWrap<SelectionHook>
+     void SetGlobalFilterMode(const Napi::CallbackInfo &info);
+     void SetFineTunedList(const Napi::CallbackInfo &info);
+     void SetSelectionPassiveMode(const Napi::CallbackInfo &info);
++    void SetClipboardOnly(const Napi::CallbackInfo &info);
+     Napi::Value GetCurrentSelection(const Napi::CallbackInfo &info);
+     Napi::Value WriteToClipboard(const Napi::CallbackInfo &info);
+     Napi::Value ReadFromClipboard(const Napi::CallbackInfo &info);
+@@ -266,6 +267,7 @@ class SelectionHook : public Napi::ObjectWrap<SelectionHook>
+     std::shared_ptr<ClipboardSequenceState> clipboard_sequence_state = std::make_shared<ClipboardSequenceState>();
+ 
+     // clipboard filter mode
++    bool clipboard_only = false;
+     FilterMode clipboard_filter_mode = FilterMode::Default;
+     std::vector<std::string> clipboard_filter_list;
+ 
+@@ -475,6 +477,7 @@ Napi::Object SelectionHook::Init(Napi::Env env, Napi::Object exports)
+                      InstanceMethod("setGlobalFilterMode", &SelectionHook::SetGlobalFilterMode),
+                      InstanceMethod("setFineTunedList", &SelectionHook::SetFineTunedList),
+                      InstanceMethod("setSelectionPassiveMode", &SelectionHook::SetSelectionPassiveMode),
++                     InstanceMethod("setClipboardOnly", &SelectionHook::SetClipboardOnly),
+                      InstanceMethod("getCurrentSelection", &SelectionHook::GetCurrentSelection),
+                      InstanceMethod("writeToClipboard", &SelectionHook::WriteToClipboard),
+                      InstanceMethod("readFromClipboard", &SelectionHook::ReadFromClipboard)});
+@@ -704,6 +707,16 @@ void SelectionHook::DisableMouseMoveEvent(const Napi::CallbackInfo &info)
+ /**
+  * NAPI: Set selection passive mode
+  */
++void SelectionHook::SetClipboardOnly(const Napi::CallbackInfo &info)
++{
++    if (info.Length() != 1 || !info[0u].IsBoolean())
++    {
++        Napi::TypeError::New(info.Env(), "Boolean expected").ThrowAsJavaScriptException();
++        return;
++    }
++    clipboard_only = info[0u].As<Napi::Boolean>().Value();
++}
++
+ void SelectionHook::SetSelectionPassiveMode(const Napi::CallbackInfo &info)
+ {
+     Napi::Env env = info.Env();
+@@ -1254,6 +1267,7 @@ SelectionConfigSnapshot SelectionHook::BuildSelectionConfigSnapshot(bool trigger
+     // vectors, cursors, or filter settings directly from the JS-owned instance.
+     SelectionConfigSnapshot config;
+     config.clipboardEnabled = is_enabled_clipboard;
++    config.clipboardOnly = clipboard_only;
+     config.triggeredByUser = triggeredByUser;
+     config.clipboardFilterMode = clipboard_filter_mode;
+     config.clipboardFilterList = clipboard_filter_list;
+@@ -1466,6 +1480,7 @@ Napi::Object SelectionHook::CreateSelectionResultObject(Napi::Env env, const Tex
+     // Add method and position level information
+     resultObj.Set(Napi::String::New(env, "method"), Napi::Number::New(env, static_cast<int>(selectionInfo.method)));
+     resultObj.Set(Napi::String::New(env, "posLevel"), Napi::Number::New(env, static_cast<int>(selectionInfo.posLevel)));
++    resultObj.Set("historyCleanup", Napi::Number::New(env, selectionInfo.historyCleanup));
+ 
+     // First paragraph left-top point (start position)
+     resultObj.Set(Napi::String::New(env, "startTopX"), Napi::Number::New(env, selectionInfo.startTop.x));
+diff --git a/src/windows/core/engine.cc b/src/windows/core/engine.cc
+index 1bae811..df32598 100644
+--- a/src/windows/core/engine.cc
++++ b/src/windows/core/engine.cc
+@@ -19,6 +19,7 @@
+ #include <vector>
+ 
+ #include "../lib/clipboard.h"
++#include "../lib/clipboard-history.h"
+ #include "../lib/string_pool.h"
+ #include "../lib/utils.h"
+ 
+@@ -150,7 +151,7 @@ bool SelectionEngine::GetSelectedText(HWND hwnd, TextSelectionInfo &selectionInf
+ 
+     bool hasNonTextSelection = false;
+     // Prefer UIA for modern applications.
+-    if (!IsStopping() && automation_)
++    if (!config.clipboardOnly && !IsStopping() && automation_)
+     {
+         SetStage(RetrievalStage::UIAutomation);
+         const TextRetrievalResult uiaResult = GetTextViaUIAutomation(hwnd, selectionInfo);
+@@ -168,7 +169,7 @@ bool SelectionEngine::GetSelectedText(HWND hwnd, TextSelectionInfo &selectionInf
+     }
+ 
+     // Fall back to MSAA/IAccessible for legacy applications and compatibility providers.
+-    if (!IsStopping())
++    if (!config.clipboardOnly && !IsStopping())
+     {
+         SetStage(RetrievalStage::Accessible);
+         const TextRetrievalResult accessibleResult = GetTextViaAccessible(hwnd, selectionInfo);
+@@ -251,6 +252,9 @@ bool SelectionEngine::ShouldProcessViaClipboard(const std::wstring &programName)
+     }
+     if (!result)
+         return false;
++    // Explicit copy mode must also work with PDF readers using custom cursors.
++    if (config_->clipboardOnly)
++        return true;
+ 
+     // A direct getCurrentSelection() call has no reliable mouse cursor context, so the
+     // cursor heuristic applies only to automatic mouse-driven retrieval.
+@@ -683,6 +687,13 @@ bool SelectionEngine::GetTextViaClipboard(HWND hwnd, TextSelectionInfo &selectio
+     if (!hwnd || IsStopping())
+         return false;
+ 
++    const auto sourceIsFocused = [&]() {
++        const HWND sourceRoot = GetAncestor(hwnd, GA_ROOT);
++        return sourceRoot && sourceRoot == GetAncestor(GetForegroundWindow(), GA_ROOT);
++    };
++    if (!sourceIsFocused())
++        return false;
++
+     // Clipboard extraction is one indivisible save/copy/read/restore transaction.
+     std::unique_lock<std::mutex> clipboardLock(g_clipboard_mutex, std::defer_lock);
+     if (clipboardLockMode_ == ClipboardLockMode::TryOnly)
+@@ -721,7 +732,12 @@ bool SelectionEngine::GetTextViaClipboard(HWND hwnd, TextSelectionInfo &selectio
+             // A sequence change since mouse-down means the application/user already
+             // copied the selection; read it directly without injecting another key.
+             if (GetClipboardSequenceNumber() != clipboardSequence_)
++            {
++                // An unrelated clipboard update is not proof of selected text.
++                if (config_->clipboardOnly)
++                    return false;
+                 return ReadClipboard(selectionInfo.text) && !selectionInfo.text.empty();
++            }
+ 
+             const bool ctrlPressing = (GetAsyncKeyState(VK_CONTROL) & 0x8000) != 0;
+             const bool cPressing = (GetAsyncKeyState('C') & 0x8000) != 0;
+@@ -748,6 +764,10 @@ bool SelectionEngine::GetTextViaClipboard(HWND hwnd, TextSelectionInfo &selectio
+ 
+     // Preserve every backupable clipboard format, not only text. A fallback must be
+     // transparent to users who have copied files, images, or rich content.
++    const DWORD beforeHistory = GetClipboardSequenceNumber();
++    glint::ClipboardHistoryCapture history;
++    if (GetClipboardSequenceNumber() != beforeHistory || !sourceIsFocused())
++        return false;
+     ClipboardBackup clipboardBackup;
+     if (!OpenClipboard(nullptr))
+         return false;
+@@ -764,6 +784,21 @@ bool SelectionEngine::GetTextViaClipboard(HWND hwnd, TextSelectionInfo &selectio
+             // so the next gesture does not mistake our restore for a user's copy.
+             clipboardSequence_ = GetClipboardSequenceNumber();
+         }
++        else if (OpenClipboard(nullptr))
++        {
++            // Restore an originally empty clipboard as well.
++            EmptyClipboard();
++            CloseClipboard();
++            clipboardSequence_ = GetClipboardSequenceNumber();
++        }
++    };
++
++    const auto finishCopy = [&](bool readSuccess) {
++        if (readSuccess && sourceIsFocused() && !ShouldKeyInterruptViaClipboard())
++            history.ObserveCopy(hwnd, selectionInfo.text);
++        restoreBackup();
++        selectionInfo.historyCleanup = static_cast<int>(history.Finish(clipboardSequence_));
++        return sourceIsFocused() && readSuccess && !selectionInfo.text.empty();
+     };
+ 
+     // Delay-list applications skip Ctrl+Insert and need extra settling time after Ctrl+C.
+@@ -771,7 +806,7 @@ bool SelectionEngine::GetTextViaClipboard(HWND hwnd, TextSelectionInfo &selectio
+                            IsInFilterList(selectionInfo.programName, config_->includeClipboardDelayRead);
+     if (!delayRead)
+     {
+-        if (IsStopping() || ShouldKeyInterruptViaClipboard())
++        if (IsStopping() || !sourceIsFocused() || ShouldKeyInterruptViaClipboard())
+         {
+             restoreBackup();
+             return false;
+@@ -803,12 +838,11 @@ bool SelectionEngine::GetTextViaClipboard(HWND hwnd, TextSelectionInfo &selectio
+                 return false;
+             }
+             const bool readSuccess = ReadClipboard(selectionInfo.text);
+-            restoreBackup();
+-            return readSuccess && !selectionInfo.text.empty();
++            return finishCopy(readSuccess);
+         }
+     }
+ 
+-    if (IsStopping() || ShouldKeyInterruptViaClipboard())
++    if (IsStopping() || !sourceIsFocused() || ShouldKeyInterruptViaClipboard())
+     {
+         restoreBackup();
+         return false;
+@@ -851,8 +885,7 @@ bool SelectionEngine::GetTextViaClipboard(HWND hwnd, TextSelectionInfo &selectio
+     }
+ 
+     const bool readSuccess = ReadClipboard(selectionInfo.text);
+-    restoreBackup();
+-    return readSuccess && !selectionInfo.text.empty();
++    return finishCopy(readSuccess);
+ }
+ 
+ /** Inject Ctrl+Insert or Ctrl+C while respecting modifiers already held by the user. */
+diff --git a/binding.gyp b/binding.gyp
+index 05c0fc1..b367e9c 100644
+--- a/binding.gyp
++++ b/binding.gyp
+@@ -21,17 +21,20 @@
+             "src/windows/lib/string_pool.cc",
+             "src/windows/lib/utils.cc",
+             "src/windows/lib/clipboard.cc",
++            "src/windows/lib/clipboard-history.cpp",
+             "src/windows/lib/keyboard.cc"
+           ],
+           "libraries": [ 
+             "uiautomationcore.lib",
++            "windowsapp.lib",
+             # Required for mouse hooks
+             "user32.lib"
+           ],
+           "msvs_settings": {
+             "VCCLCompilerTool": {
+               # Enable C++ exception handling (/EHsc)
+-              "ExceptionHandling": "1" 
++              "ExceptionHandling": "1",
++              "AdditionalOptions": ["/std:c++17"] 
+             }
+           }
+         }],
+diff --git a/src/windows/lib/clipboard.cc b/src/windows/lib/clipboard.cc
+index 085026f..e73394a 100644
+--- a/src/windows/lib/clipboard.cc
++++ b/src/windows/lib/clipboard.cc
+@@ -6,6 +6,7 @@
+  */
+ 
+ #include "clipboard.h"
++#include "clipboard-history.h"
+ 
+ #include <vector>
+ 
+@@ -281,6 +282,7 @@ bool RestoreClipboard(const ClipboardBackup &backup)
+         // On success, system owns hData -- do NOT free
+     }
+ 
++    glint::ExcludeRestorationFromHistory();
+     CloseClipboard();
+     return true;
+ }
+\ No newline at end of file

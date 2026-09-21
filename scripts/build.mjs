@@ -1,4 +1,5 @@
 import { build } from 'esbuild';
+import './setup-selection.mjs';
 import { mkdir, copyFile, readFile } from 'node:fs/promises';
 import { buildIcons, iconNames } from './icons.mjs';
 import { buildBrand } from './brand.mjs';

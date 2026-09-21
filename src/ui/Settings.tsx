@@ -38,7 +38,11 @@ function Triggers() {
     <SettingSwitch label="启用划词助手" description="关闭后停止系统划词监听。" field="enabled" />
     <Select label="触发方式" field="trigger" value={draft.trigger} options={[[ 'automatic', '选中文字后自动显示'], ['shortcut', '仅使用快捷键']]} onChange={value => ui.edit(draft => { draft.trigger = value as Settings['trigger']; })} />
     <Field label="全局快捷键" hint="例如 CommandOrControl+Alt+G。自动模式下也能使用快捷键。"><Input value={draft.shortcut} spellCheck={false} input={controlData({ 'data-field': 'shortcut' })} onChange={(_, data) => ui.edit(draft => { draft.shortcut = data.value; })} /></Field>
-    <SettingSwitch label="允许复制取词" description="辅助接口取不到文字时，尝试复制并恢复剪贴板。" field="clipboardFallback" />
+    <Field label="取词方式" hint={{ accessibility: '通过辅助接口取词，不操作剪贴板。', clipboard: '直接复制选区，完成后恢复剪贴板。', auto: '辅助接口取不到文字时，再尝试复制。' }[draft.selectionMethod]}>
+      <div className="theme-options" role="group" aria-label="取词方式">{([['accessibility', '辅助接口'], ['clipboard', '复制取词'], ['auto', '按需复制']] as const).map(([value, label]) =>
+        <ToggleButton key={value} checked={draft.selectionMethod === value} data-selection-method={value} onClick={() => ui.edit(draft => { draft.selectionMethod = value; })}>{label}</ToggleButton>)}
+      </div>
+    </Field>
     <Field className="excluded-apps-field" label="在这些应用中停用" hint="每行一个程序名。终端默认排除，以避免复制快捷键干扰命令。"><Textarea rows={4} value={apps} resize="none" spellCheck={false} placeholder="例如 WindowsTerminal.exe" textarea={controlData({ 'data-apps': '' })}
       onChange={(_, data) => { setApps(data.value); ui.edit(draft => { draft.excludedApps = data.value.split(/\r?\n/).map(v => v.trim()).filter(Boolean); }); }} /></Field>
   </section></>;

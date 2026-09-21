@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { existsSync, readFileSync, mkdtempSync, mkdirSync } from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
@@ -29,7 +30,11 @@ for (const name of ['/dist/licenses/frontend/dependencies.json', '/dist/licenses
   assert.ok(entries.includes(name), `Missing frontend notice: ${name}`);
 }
 assert.ok(!entries.some(name => name.startsWith('/node_modules/@fluentui/') || name.startsWith('/node_modules/react/')), 'Bundled frontend libraries must not be duplicated as runtime packages');
+assert.ok(!entries.some(name => name.startsWith('/node_modules/selection-hook/build/')), 'Native compiler intermediates must not ship');
 assert.ok(existsSync('release/win-unpacked/resources/app.asar.unpacked/node_modules/selection-hook/prebuilds/win32-x64/selection-hook.node'), 'Native selection binary must be unpacked');
+const nativeBinary = 'node_modules/selection-hook/prebuilds/win32-x64/selection-hook.node';
+const nativeStamp = JSON.parse(readFileSync('node_modules/selection-hook/glint-native.json', 'utf8'));
+assert.equal(createHash('sha256').update(readFileSync(`release/win-unpacked/resources/app.asar.unpacked/${nativeBinary}`)).digest('hex'), nativeStamp.binary, 'Package must ship the verified patched native binary');
 
 mkdirSync('work', { recursive: true });
 const executables = ['release/win-unpacked/Glint.exe', `release/Glint-${version}-windows-x64-portable.exe`];

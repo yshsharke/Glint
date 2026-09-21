@@ -41,7 +41,7 @@ Click the Glint icon on the toolbar to open settings. Closing settings keeps Gli
 
 - **Your own actions.** Choose **指令 (Instruction)** or **搜索 (Search)**, edit prompts and add up to 12 actions. Reorder, enable or hide them. New actions need a display name and a unique English name (such as Summary / summary). The English name is shown only during creation and stays fixed after saving to identify the database.
 - **A consistent icon library.** Browse and search the built-in Lucide icons, available offline.
-- **Control when it appears.** Use automatic selection or a keyboard shortcut, exclude specific apps and optionally enable clipboard fallback.
+- **Control when it appears.** Use automatic selection or a keyboard shortcut and exclude specific apps. Choose accessibility capture, direct copy, or copy when accessibility finds no text. Copy capture restores the clipboard afterward.
 - **A compact Windows-style interface.** Follow the system theme or choose light/dark, with four accent colors and two toolbar densities.
 
 <img src="docs/assets/settings.png" width="760" alt="Glint 0.2.0 Actions settings showing the action list, name, icon, type, prompt and toolbar preview">

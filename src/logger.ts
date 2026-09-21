@@ -12,6 +12,12 @@ interface LogFields {
   code?: string;
   imported?: number;
   saved?: boolean;
+  inputLength?: number;
+  selectionId?: number;
+  sourceApp?: string;
+  method?: string;
+  version?: string;
+  historyCleanup?: number;
 }
 export function errorCode(error: unknown): string {
   if (!error || typeof error !== 'object') return 'UNKNOWN';

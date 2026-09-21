@@ -32,8 +32,9 @@ port.on('message', (event: { data: { type: string; settings?: Settings; id?: num
         ...(message.testing ? [] : [path.basename(process.execPath).toLowerCase()])
       ]);
       hook.setFineTunedList(Hook.FineTunedListType.EXCLUDE_CLIPBOARD_CURSOR_DETECT, ['acrobat.exe', 'wps.exe', 'cajviewer.exe']);
-      hook.setFineTunedList(Hook.FineTunedListType.INCLUDE_CLIPBOARD_DELAY_READ, ['acrobat.exe', 'wps.exe', 'cajviewer.exe', 'foxitphantom.exe']);
-      settings.clipboardFallback ? hook.enableClipboard() : hook.disableClipboard();
+      hook.setFineTunedList(Hook.FineTunedListType.INCLUDE_CLIPBOARD_DELAY_READ, ['acrobat.exe', 'wps.exe', 'cajviewer.exe', 'foxitphantom.exe', 'zotero.exe']);
+      if (!hook.setClipboardOnly(settings.selectionMethod === 'clipboard')) throw new Error('取词引擎缺少复制模式支持，请重新构建或安装 Glint。');
+      settings.selectionMethod === 'accessibility' ? hook.disableClipboard() : hook.enableClipboard();
       hook.setSelectionPassiveMode(settings.trigger === 'shortcut');
       send({ type: 'ready', paused: false });
     } else if (message.type === 'capture') {
