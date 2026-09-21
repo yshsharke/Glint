@@ -5,7 +5,7 @@
 ## 验证
 
 - [ ] `npm run check` 通过
-- [ ] 涉及窗口、IPC 或原生取词时，已运行 `npm run smoke`；否则说明不适用
+- [ ] 涉及窗口、IPC 或原生取词时，已运行 `npm run smoke`；Linux 在可丢弃桌面中使用 `GLINT_TEST_DESKTOP=1 npm run smoke`，否则说明未验证的环境
 - [ ] 未包含密钥、真实划词内容、个人配置、数据库或日志
 - [ ] 如变更依赖、数据格式或用户行为，已更新对应文档和许可说明
 

@@ -9,14 +9,14 @@ body:
     id: environment
     attributes:
       label: 环境
-      description: Windows 版本、Glint 版本或提交、Node.js 版本；取词问题请补充目标应用及版本、是否以管理员运行。
+      description: 操作系统与 Glint 版本或提交、Node.js 版本；Linux 请注明发行版、桌面、X11/Wayland 会话。取词问题请补充目标应用及版本、是否以管理员运行。
     validations:
       required: true
   - type: textarea
     id: steps
     attributes:
       label: 复现步骤
-      description: 使用不含隐私的示例文字，说明自动划词还是快捷键、是否开启剪贴板回退。
+      description: 使用不含隐私的示例文字，说明自动划词还是快捷键、所选取词方式；Wayland 请补充快捷键授权与诊断状态。
     validations:
       required: true
   - type: textarea
