@@ -5,7 +5,7 @@ export interface Settings {
   enabled: boolean;
   trigger: 'automatic' | 'shortcut';
   shortcut: string;
-  clipboardFallback: boolean;
+  selectionMethod: 'accessibility' | 'clipboard' | 'auto';
   excludedApps: string[];
   theme: 'light' | 'dark' | 'system';
   accent: 'blue' | 'violet' | 'teal' | 'amber';
@@ -46,7 +46,7 @@ export interface GlintAPI {
   save(settings: Settings, keyUpdate?: string): Promise<{ ok: boolean; error?: string }>;
   demo(): Promise<void>;
   fitToolbar(selectionId: number, width: number, height: number): Promise<void>;
-  run(actionId: string): Promise<{ ok: boolean; error?: string }>;
+  run(actionId: string, selectionId: number): Promise<{ ok: boolean; error?: string }>;
   openSettings(): Promise<void>;
   settingsWindow(action: 'minimize' | 'maximize' | 'close'): Promise<void>;
   dismiss(): Promise<void>;
@@ -64,7 +64,7 @@ export interface GlintAPI {
 }
 export const defaults: Settings = {
   version: 1, enabled: true, trigger: 'automatic', shortcut: 'CommandOrControl+Alt+G',
-  clipboardFallback: false, excludedApps: ['WindowsTerminal.exe', 'cmd.exe', 'powershell.exe', 'pwsh.exe'],
+  selectionMethod: 'accessibility', excludedApps: ['WindowsTerminal.exe', 'cmd.exe', 'powershell.exe', 'pwsh.exe'],
   theme: 'system', accent: 'blue', density: 'comfortable',
   provider: { baseUrl: 'https://api.openai.com/v1', model: '' },
   actions: [
@@ -97,14 +97,16 @@ export function migrateSettings(input: unknown): Settings {
     used.add(englishName);
     return { ...action, englishName };
   });
-  return validateSettings({ ...saved, actions });
+  const selectionMethod = saved.selectionMethod ?? (saved.clipboardFallback === true ? 'auto' : 'accessibility');
+  return validateSettings({ ...saved, actions, selectionMethod });
 }
 
 export function validateSettings(input: unknown): Settings {
   if (!input || typeof input !== 'object') throw new Error('设置格式无效。');
   const s = input as Settings;
   const text = (v: unknown, max: number) => typeof v === 'string' && v.length <= max;
-  if (s.version !== 1 || typeof s.enabled !== 'boolean' || typeof s.clipboardFallback !== 'boolean') throw new Error('设置版本或开关无效。');
+  if (s.version !== 1 || typeof s.enabled !== 'boolean') throw new Error('设置版本或开关无效。');
+  if (!['accessibility', 'clipboard', 'auto'].includes(s.selectionMethod)) throw new Error('取词方式无效。');
   if (!['automatic', 'shortcut'].includes(s.trigger) || !['light', 'dark', 'system'].includes(s.theme) || !['blue', 'violet', 'teal', 'amber'].includes(s.accent) || !['comfortable', 'compact'].includes(s.density)) throw new Error('设置选项无效。');
   if (!text(s.shortcut, 80) || !s.shortcut.trim()) throw new Error('请填写快捷键。');
   if (!Array.isArray(s.excludedApps) || s.excludedApps.length > 100 || !s.excludedApps.every(v => text(v, 100) && v.trim())) throw new Error('应用排除列表无效。');
@@ -123,7 +125,7 @@ export function validateSettings(input: unknown): Settings {
   }
   if (!s.actions.some(a => a.enabled)) throw new Error('至少启用一个动作。');
   return {
-    version: 1, enabled: s.enabled, trigger: s.trigger, shortcut: s.shortcut.trim(), clipboardFallback: s.clipboardFallback,
+    version: 1, enabled: s.enabled, trigger: s.trigger, shortcut: s.shortcut.trim(), selectionMethod: s.selectionMethod,
     excludedApps: [...new Set(s.excludedApps.map(a => a.trim().toLowerCase()))], theme: s.theme, accent: s.accent, density: s.density,
     provider: { baseUrl: s.provider.baseUrl.trim().replace(/\/+$/, ''), model: s.provider.model.trim() },
     actions: s.actions.map(a => ({ id: a.id, name: a.name.trim(), englishName: a.englishName, icon: a.icon, kind: a.kind, prompt: a.prompt, enabled: a.enabled }))

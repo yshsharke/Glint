@@ -30,7 +30,7 @@ Pinned dependency: `selection-hook@2.1.1`.
 - [Windows retrieval engine](https://github.com/0xfullex/selection-hook/blob/v2.1.1/src/windows/core/engine.cc)
 - [MIT license](https://github.com/0xfullex/selection-hook/blob/v2.1.1/LICENSE)
 
-Glint directly uses the native package for hooks, UIA/MSAA retrieval, coordinates and optional clipboard fallback. Its upstream license must accompany any distributed bundle containing the package.
+Glint uses the native package for hooks, UIA/MSAA retrieval, coordinates and clipboard capture. A [small Windows patch](../patches/README.md) adds explicit clipboard-only capture and restores an initially empty clipboard. It is compiled during dependency setup and shipped in both installer and portable builds. Its upstream MIT license accompanies the bundle.
 
 ## Cherry Studio (AGPL-3.0)
 

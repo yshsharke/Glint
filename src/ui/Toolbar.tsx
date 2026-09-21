@@ -35,7 +35,7 @@ export function Toolbar({ settings, live = false }: { settings: Settings; live?:
     <div className="bar-actions">{settings.actions.filter(a => a.enabled).map(a => <Button key={a.id}
       appearance="subtle" size="small" className="bar-action" data-run={live ? a.id : undefined}
       data-preview-action={live ? undefined : ''} icon={<Icon name={a.icon} />} aria-label={a.name} title={a.name}
-      onClick={() => live ? void perform(async () => { const r = await window.glint.run(a.id); if (!r.ok) toast(r.error || '执行失败', true); }) : toast('点击「测试浮条」体验动作。')}>
+      onClick={() => live ? void perform(async () => { if (selectionId === undefined) return; const r = await window.glint.run(a.id, selectionId); if (!r.ok) toast(r.error || '执行失败', true); }) : toast('点击「测试浮条」体验动作。')}>
       {settings.density === 'compact' ? undefined : a.name}
     </Button>)}</div>
   </div>;

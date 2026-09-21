@@ -4,7 +4,7 @@
 
 ## 开发
 
-使用 Windows 10/11 x64、Node.js 24 和 npm，在仓库根目录运行：
+使用 Windows 10/11 x64、Node.js 24、npm、Git、Python 和 Visual Studio 2022 的“使用 C++ 的桌面开发”工具（含 Windows SDK）。`npm ci` 会编译取词兼容补丁；应用用户无需这些开发工具。在仓库根目录运行：
 
 ```powershell
 npm ci
@@ -13,6 +13,8 @@ npm start
 ```
 
 配置在设置页填写；项目不需要 `.env`，不要把真实 API Key、用户配置或数据库放进源码。
+
+`npm run test:clipboard-history` 检查 Windows 历史清理保护规则与系统接口。历史关闭或容量接近上限时跳过真实新增/删除测试，不会清空历史或修改系统开关；测试结束后仅移除本次生成的测试条目。
 
 ## 检查
 

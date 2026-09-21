@@ -7,7 +7,7 @@ Glint's original code and brand artwork are licensed under MIT. Third-party comp
 | Component | License | Use |
 | --- | --- | --- |
 | [Electron](https://github.com/electron/electron) | MIT, plus bundled component notices | Desktop runtime |
-| [selection-hook](https://github.com/0xfullex/selection-hook) | MIT | Native Windows selection engine |
+| [selection-hook](https://github.com/0xfullex/selection-hook) | MIT | Native Windows selection engine, with Glint's [copy-mode patch](patches/README.md) |
 | [node-addon-api](https://github.com/nodejs/node-addon-api) | MIT | Native addon support for selection-hook |
 | [node-gyp-build](https://github.com/prebuild/node-gyp-build) | MIT | Native addon loader |
 | [Lucide](https://github.com/lucide-icons/lucide) | ISC and notices included in its full LICENSE | Controls and action icons |
@@ -31,6 +31,7 @@ The build copies full license texts into `dist/licenses/`, including Electron's 
 | [Node.js type definitions](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT | Development types |
 | [electron-builder](https://github.com/electron-userland/electron-builder) | MIT | Windows installer and portable packaging |
 | [Electron ASAR](https://github.com/electron/asar) | MIT | Packaged archive verification |
+| [node-gyp](https://github.com/nodejs/node-gyp) | MIT | Builds the Windows selection compatibility patch |
 
 These tools are installed by npm and are not copied into Glint's renderer bundle. Their license texts accompany the installed packages. Node.js/Electron also include additional third-party notices in their distributions.
 

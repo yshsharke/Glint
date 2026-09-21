@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { defaults } from '../../src/core';
-import type { Settings } from '../../src/core';
+import type { Settings, Selection } from '../../src/core';
 import type { ApplicationRuntime } from '../../src/main';
 
 export async function runSmoke(runtime: ApplicationRuntime, mode: string) {
@@ -121,11 +121,19 @@ async function runSettingsSmoke(runtime: ApplicationRuntime) {
   await fs.promises.writeFile(path.join(folder, 'settings-small.png'), (await runtime.setup!.webContents.capturePage()).toPNG());
   runtime.setup!.setSize(920, 640);
   await ui("document.querySelector('[data-page=triggers]').click()");
-  const fallbackBefore = await runtime.setup!.webContents.executeJavaScript("document.querySelector('input[data-field=clipboardFallback]').checked");
-  await ui("document.querySelector('input[data-field=clipboardFallback]').click()");
-  assert.equal(await runtime.setup!.webContents.executeJavaScript("document.querySelector('input[data-field=clipboardFallback]').checked"), !fallbackBefore, 'Fluent switch updates the draft');
+  for (const method of ['clipboard', 'auto', 'accessibility', 'clipboard']) {
+    await ui(`document.querySelector('[data-selection-method=${method}]').click()`);
+    assert.equal(await runtime.setup!.webContents.executeJavaScript(`document.querySelector('[data-selection-method=${method}]').getAttribute('aria-pressed')`), 'true', 'selection method updates the draft');
+    assert.equal(await runtime.setup!.webContents.executeJavaScript("document.querySelectorAll('[data-selection-method][aria-pressed=true]').length"), 1, 'selection methods are mutually exclusive');
+  }
   await ui("document.querySelector('[data-revert]').click()");
-  assert.equal(await runtime.setup!.webContents.executeJavaScript("document.querySelector('input[data-field=clipboardFallback]').checked"), fallbackBefore, 'revert restores switch state');
+  assert.equal(await runtime.setup!.webContents.executeJavaScript("document.querySelector('[data-selection-method=accessibility]').getAttribute('aria-pressed')"), 'true', 'revert restores selection method');
+  for (const method of ['clipboard', 'auto', 'accessibility']) {
+    assert.equal((await runtime.setup!.webContents.executeJavaScript(`(async () => window.glint.save({ ...(await window.glint.snapshot()).settings, selectionMethod: '${method}' }))()`)).ok, true);
+    await until(() => runtime.status.hook === 'ready', 'engine restarts after changing selection method');
+    assert.equal(runtime.settings.selectionMethod, method, 'saved method reaches the main process');
+    await untilUI(`document.querySelector('[data-selection-method=${method}]')?.getAttribute('aria-pressed') === 'true'`, 'saved method returns to the renderer');
+  }
   // Check real Web Animations API durations under both operating-system preferences.
   runtime.setup!.webContents.debugger.attach('1.3');
   try {
@@ -201,7 +209,18 @@ async function runRecordsSmoke(runtime: ApplicationRuntime) {
     assert.equal(runtime.toolbar!.isVisible(), false, 'A stale measurement must not reopen a dismissed toolbar');
     runtime.settings = structuredClone(next);
     await runtime.showDemo(); await wait(150);
-    await runtime.runAction('translate');
+    const primaryDisplay = screen.getPrimaryDisplay();
+    const sourceDisplay = screen.getAllDisplays().find(display => display.id !== primaryDisplay.id) ?? primaryDisplay;
+    const selectOnDisplay = (display: Electron.Display) => {
+      const area = display.workArea;
+      runtime.selection = { ...runtime.selection!, x: area.x + area.width / 2, y: area.y + area.height / 2 };
+    };
+    selectOnDisplay(sourceDisplay);
+    await until(() => !!runtime.toolbar?.isVisible(), 'toolbar ready for action');
+    assert.equal((await runtime.toolbar!.webContents.executeJavaScript(`window.glint.run('translate', ${runtime.selection!.id - 1})`)).ok, false, 'stale toolbar selection cannot start a model request');
+    assert.equal(requestCount, 0, 'stale selection never reaches the model');
+    assert.equal((await runtime.toolbar!.webContents.executeJavaScript(`window.glint.run('translate', ${runtime.selection!.id})`)).ok, true);
+    assert.equal(screen.getDisplayMatching(runtime.resultWindow!.getBounds()).id, sourceDisplay.id, 'new result opens on the selection display');
     await until(() => !!runtime.result && !runtime.result.busy, 'streaming response');
     assert.equal(runtime.result!.text, 'Glint 流式测试成功。');
     assert.equal(runtime.result!.error, undefined);
@@ -251,7 +270,11 @@ async function runRecordsSmoke(runtime: ApplicationRuntime) {
     runtime.result!.app = originalApp; runtime.resultWindow!.setSize(480, 360);
     const previousCardId = runtime.result!.id;
     responseDelay = 10_000;
+    const reusedWindow = runtime.resultWindow;
+    selectOnDisplay(primaryDisplay);
     await runtime.runAction('translate');
+    assert.equal(runtime.resultWindow, reusedWindow, 'result window is reused');
+    assert.equal(screen.getDisplayMatching(runtime.resultWindow!.getBounds()).id, primaryDisplay.id, 'reused result follows the new selection display');
     await until(() => !!runtime.result?.busy && !!runtime.result.text, 'partial response for cancellation');
     await wait(100);
     assert.equal(await runtime.resultWindow!.webContents.executeJavaScript("document.querySelector('#result-retry').disabled"), true);
@@ -441,7 +464,7 @@ async function runNativeSmoke(runtime: ApplicationRuntime) {
   const attempts: unknown[] = [];
   let passed = false;
   try {
-    assert.equal(runtime.settings.clipboardFallback, false, 'native test must not use clipboard fallback');
+    assert.equal(runtime.settings.selectionMethod, 'accessibility', 'initial native test must not use clipboard');
     await fixture.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(`<textarea style="width:90%;height:100px" aria-label="Selection fixture">${fixtureText}</textarea>`));
     // selection-hook filters the HWND under the OS cursor before querying UIA focus.
     // Move our fixture under the pointer instead of moving the user's pointer. Focusing
@@ -475,9 +498,62 @@ async function runNativeSmoke(runtime: ApplicationRuntime) {
     assert.equal(runtime.selection?.demo, false);
     assert.equal(runtime.selection?.method, 'UI Automation', 'selection must come from UIA');
     assert.equal(runtime.selection?.app.toLowerCase(), path.basename(process.execPath).toLowerCase(), 'process metadata must identify the fixture');
-    passed = true;
     runtime.dismissToolbar();
-    console.log('Glint native smoke passed: real UIA selection and source process, clipboard fallback disabled');
+    const savedClipboard = await Promise.all((await clipboard.read()).filter(item => item.types.length > 0).map(async item =>
+      new ClipboardItem(Object.fromEntries(await Promise.all(item.types.map(async type => [type, await item.getType(type)]))))));
+    const savedSettings = structuredClone(runtime.settings);
+    try {
+      const copiedText = 'Glint clipboard fixture';
+      // A distinct copy response proves that clipboard-only bypasses a working UIA provider.
+      await fixture.webContents.executeJavaScript(`document.addEventListener('copy', event => { event.preventDefault(); if (!window.blockCopy) event.clipboardData.setData('text/plain', ${JSON.stringify(copiedText)}); });`);
+      const capture = async (method: Settings['selectionMethod']): Promise<Selection | undefined> => {
+        runtime.dismissToolbar();
+        runtime.selection = undefined;
+        runtime.settings.selectionMethod = method;
+        runtime.settings.trigger = 'shortcut';
+        runtime.configureHost();
+        fixture.focus(); fixture.webContents.focus();
+        await wait(150);
+        runtime.captureSelection();
+        assert.ok(runtime.capturePending, 'native capture was dispatched');
+        await until(() => !runtime.capturePending, `native ${method} capture`);
+        return runtime.selection as Selection | undefined;
+      };
+      await clipboard.write([new ClipboardItem({ 'text/plain': 'Glint clipboard backup', 'text/html': '<b>Glint clipboard backup</b>' })]);
+      const readHTML = async () => {
+        const item = (await clipboard.read()).find(item => item.types.includes('text/html'));
+        if (!item) return undefined;
+        const data = await item.getType('text/html');
+        assert.ok(data instanceof Blob);
+        return data.text();
+      };
+      const previousHTML = await readHTML();
+      const copied = await capture('clipboard');
+      assert.equal(copied?.text, copiedText, 'copy mode bypasses UIA text');
+      assert.equal(copied?.method, '剪贴板');
+      assert.equal(await clipboard.readText(), 'Glint clipboard backup', 'copy mode restores text');
+      assert.deepEqual(await readHTML(), previousHTML, 'copy mode restores HTML');
+      await clipboard.clear();
+      assert.equal((await capture('clipboard'))?.text, copiedText);
+      assert.equal((await clipboard.read()).flatMap(item => item.types).length, 0, 'copy mode restores an empty clipboard');
+      await fixture.webContents.executeJavaScript('window.blockCopy = true');
+      assert.equal(await capture('clipboard'), undefined, 'failed copy must not accept UIA text');
+      await fixture.webContents.executeJavaScript('window.blockCopy = false');
+      assert.equal((await capture('auto'))?.text, fixtureText, 'on-demand mode prefers available UIA text');
+      assert.equal((await capture('accessibility'))?.text, fixtureText, 'switching back disables forced copy');
+      runtime.settings.excludedApps.push(path.basename(process.execPath));
+      assert.equal(await capture('clipboard'), undefined, 'copy mode respects excluded applications');
+      runtime.settings.excludedApps = [...savedSettings.excludedApps];
+      await fixture.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent('<canvas tabindex="0" aria-label="Copy fixture"></canvas>'));
+      await fixture.webContents.executeJavaScript(`document.querySelector('canvas').focus(); document.addEventListener('copy', event => { event.preventDefault(); event.clipboardData.setData('text/plain', ${JSON.stringify(copiedText)}); });`);
+      assert.equal(await capture('accessibility'), undefined, 'blank canvas has no accessible selection');
+      assert.equal((await capture('auto'))?.text, copiedText, 'on-demand mode copies when accessibility has no text');
+      console.log('Glint native smoke passed: UIA, forced copy, on-demand fallback, mode switching, exclusions and clipboard restoration');
+    } finally {
+      runtime.settings = savedSettings; runtime.configureHost(); runtime.dismissToolbar();
+      if (savedClipboard.length) await clipboard.write(savedClipboard); else await clipboard.clear();
+    }
+    passed = true;
   } finally {
     fs.writeFileSync(path.join(folder, 'smoke-report.json'), JSON.stringify({ passed, attempts, hook: runtime.status.hook }, null, 2));
     fixture.destroy();

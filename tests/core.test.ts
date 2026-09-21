@@ -10,6 +10,19 @@ import { AppLogger, errorCode } from '../src/logger';
 import { runtimePaths } from '../src/runtime-paths';
 import { defaults, endpoint, migrateSettings, modelErrorMessage, placeToolbar, readSSE, recordKind, recordFilename, validEnglishName, validateActionNames, validateSettings } from '../src/core';
 
+test('selection methods migrate legacy preferences and reject invalid values', () => {
+  const { selectionMethod, ...legacy } = structuredClone(defaults);
+  assert.equal(migrateSettings({ ...legacy, clipboardFallback: false }).selectionMethod, 'accessibility');
+  assert.equal(migrateSettings({ ...legacy, clipboardFallback: true }).selectionMethod, 'auto');
+  for (const method of ['accessibility', 'clipboard', 'auto'] as const) {
+    const settings = { ...defaults, selectionMethod: method };
+    assert.equal(validateSettings(settings).selectionMethod, method);
+    assert.equal(migrateSettings({ ...settings, clipboardFallback: true }).selectionMethod, method);
+    assert.equal('clipboardFallback' in migrateSettings({ ...settings, clipboardFallback: true }), false);
+  }
+  assert.throws(() => validateSettings({ ...defaults, selectionMethod: 'invalid' }), /取词方式无效/);
+});
+
 test('IPC page guard accepts Chromium short-path encoding but rejects other origins and lookalike files', () => {
   const page = path.resolve('work', 'RUNNER~1', 'space 中文', 'index.html');
   const url = pathToFileURL(page).href;

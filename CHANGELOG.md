@@ -1,5 +1,21 @@
 # Changelog
 
+## 0.5.0 — 2026-09-21（预览版）
+
+- 触发页新增「辅助接口」「复制取词」「按需复制」三种全局取词方式；旧剪贴板开关自动迁移，切换方式会重启取词引擎并丢弃旧选区。
+- 复制取词直接绕过辅助接口，解决 Zotero PDF 返回错误选中文字的场景；复制完成后恢复剪贴板，复制失败不回退使用辅助接口文字。
+- 恢复旧内容时标记为不进入 Windows 剪贴板历史；尝试按 ID、时间与内容清理本次临时取词记录，无法确定归属或期间有其他复制时保留记录。
+- 修复多显示器下结果卡片打开在错误屏幕的问题；新建和复用卡片都跟随选区所在屏幕。
+- 浮条执行动作时校验选区编号，拒绝过期选区；补充仅包含元数据的取词和模型请求日志。
+- 将 selection-hook 兼容补丁纳入可重复构建流程，增加三种取词方式、剪贴板恢复及打包原生模块校验。
+
+- Add three global capture modes: accessibility, direct copy, and copy on demand. Migrate the previous clipboard preference and discard in-flight selections when switching modes.
+- Direct copy bypasses accessibility providers, addressing incorrect selected text in Zotero PDFs. Restore the clipboard afterward and never accept accessibility text after a failed direct copy.
+- Exclude restored content from Windows clipboard history and attempt to remove only the temporary capture entry, preserving ambiguous records and concurrent copies.
+- Keep new and reused result cards on the display containing the selection.
+- Reject stale toolbar selections and add metadata-only capture and model-request diagnostics.
+- Build the selection-hook compatibility patch reproducibly and test capture strategies, clipboard restoration, and the packaged native binary.
+
 ## 0.4.0 — 2026-09-20（预览版）
 
 - 历史记录支持单条删除；详情采用独立滚动的上下两栏，顶部集中提供复制原文、复制结果和删除按钮。

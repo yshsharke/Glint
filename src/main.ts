@@ -148,6 +148,7 @@ async function showSelection(data: TextSelectionData, demo = false) {
   if (demo && setup) { const bounds = setup.getBounds(); point = { x: bounds.x + bounds.width / 2 + 100, y: bounds.y + 260 }; }
   const current: Selection = { id: ++serial, text: data.text, app: data.programName || '未知应用', method: demo ? '演示' : ({ 1: 'UI Automation', 3: 'IAccessible', 99: '剪贴板' } as Record<number, string>)[data.method] || '系统取词', x: point.x, y: point.y, demo };
   selection = current;
+  logger?.write('selection.accepted', { selectionId: current.id, sourceApp: current.app, method: current.method, inputLength: current.text.length, historyCleanup: data.historyCleanup });
   toolbarSelectionId = current.id;
   status.lastSelection = { app: current.app, method: current.method, length: current.text.length };
   diagnose(`${demo ? '演示' : '取词成功'} · ${current.app} · ${current.method} · ${current.text.length} 字符`);
@@ -221,9 +222,16 @@ function updateTray() {
     { type: 'separator' }, { label: '退出', click: () => app.quit() }
   ]));
 }
-async function getResultWindow() {
-  if (resultWindow && !resultWindow.isDestroyed()) return resultWindow;
-  const win = new BrowserWindow({ width: 480, height: 360, minWidth: 380, minHeight: 240, frame: false, minimizable: false, maximizable: false, fullscreenable: false, show: false, title: 'Glint · 结果', alwaysOnTop: true, autoHideMenuBar: true, backgroundColor: '#f3f3f3', icon: createIcon(), webPreferences: { preload, sandbox: true, contextIsolation: true, nodeIntegration: false } });
+async function getResultWindow(anchor: Pick<Selection, 'x' | 'y'>) {
+  const area = screen.getDisplayNearestPoint(anchor).workArea;
+  if (resultWindow && !resultWindow.isDestroyed()) {
+    const { width, height } = resultWindow.getBounds();
+    const position = placeToolbar(anchor, area, width, height);
+    resultWindow.setPosition(position.x, position.y);
+    return resultWindow;
+  }
+  const position = placeToolbar(anchor, area, 480, 360);
+  const win = new BrowserWindow({ ...position, width: 480, height: 360, minWidth: 380, minHeight: 240, frame: false, minimizable: false, maximizable: false, fullscreenable: false, show: false, title: 'Glint · 结果', alwaysOnTop: true, autoHideMenuBar: true, backgroundColor: '#f3f3f3', icon: createIcon(), webPreferences: { preload, sandbox: true, contextIsolation: true, nodeIntegration: false } });
   resultWindow = win; secureWindow(win);
   win.on('closed', () => { abort?.abort(); resultPrompt = undefined; resultWindow = undefined; });
   await win.loadFile(page, { query: { view: 'result' } });
@@ -241,15 +249,22 @@ async function runAction(actionId: unknown) {
   const state: ResultState = { id: randomUUID(), recorded: false, recordKind: recordKind(action), actionName: action.name, actionIcon: action.icon, source: captured.text, text: '', app: captured.app, busy: true, demo: captured.demo };
   result = state;
   resultPrompt = action.prompt;
-  const win = await getResultWindow();
+  const win = await getResultWindow(captured);
   if (abort !== controller) return;
   broadcast(); win.show();
   void generate(action.prompt, captured.text, state, controller);
 }
 async function generate(prompt: string, text: string, state: ResultState, controller: AbortController) {
   const startedAt = Date.now();
-  logger?.write('model.started', { requestId: state.id, kind: state.recordKind || 'other' });
-  const publish = () => { if (result === state) emit({ type: 'result', result: state }); };
+  logger?.write('model.started', { requestId: state.id, kind: state.recordKind || 'other', sourceApp: state.app, inputLength: text.length });
+  let firstOutput = false;
+  const publish = () => {
+    if (!firstOutput && state.text.length) {
+      firstOutput = true;
+      logger?.write('model.first-output', { requestId: state.id, elapsedMs: Date.now() - startedAt });
+    }
+    if (result === state) emit({ type: 'result', result: state });
+  };
   const timeout = setTimeout(() => controller.abort(new Error('请求超过 90 秒。')), 90_000);
   let lastPublish = 0;
   try {
@@ -341,9 +356,12 @@ function installIPC() {
       }
       persist(next, key);
       if (newShortcut && settings.shortcut !== newShortcut) globalShortcut.unregister(settings.shortcut);
+      const selectionMethodChanged = next.selectionMethod !== settings.selectionMethod;
       settings = next; encryptedKey = key; status.shortcutReady = true;
       initializeRecordStores(settings.actions);
-      configureHost(); dismissToolbar(); updateTray(); broadcast();
+      // Discard in-flight results acquired with the previous retrieval strategy.
+      if (selectionMethodChanged) { selection = undefined; startHost(); } else configureHost();
+      dismissToolbar(); updateTray(); broadcast();
       return { ok: true };
     } catch (error) {
       if (newShortcut) globalShortcut.unregister(newShortcut);
@@ -361,7 +379,14 @@ function installIPC() {
     toolbar.showInactive();
     toolbar.setAlwaysOnTop(true, 'screen-saver');
   });
-  handle('run', async (_event, id) => { try { await runAction(id); return { ok: true }; } catch (error) { return { ok: false, error: error instanceof Error ? error.message : '操作失败。' }; } });
+  handle('run', async (event, id, selectionId) => {
+    if (event.sender !== toolbar?.webContents || !toolbar.isVisible() || !Number.isSafeInteger(selectionId)
+      || selectionId !== toolbarSelectionId || selectionId !== selection?.id) {
+      return { ok: false, error: '选区已更新或浮条已关闭，请重新划词。' };
+    }
+    try { await runAction(id); return { ok: true }; }
+    catch (error) { return { ok: false, error: error instanceof Error ? error.message : '操作失败。' }; }
+  });
   handle('settings', () => { dismissToolbar(); openSettings(); });
   handle('settings-window', (event, action) => {
     if (event.sender !== setup?.webContents) throw new Error('Settings window only');
@@ -408,7 +433,7 @@ if (!app.requestSingleInstanceLock()) app.quit();
 else {
   try { logger = new AppLogger(paths.logs); }
   catch { console.error('Glint 无法初始化运行日志目录。'); }
-  logger?.write('app.started');
+  if (logger && !logger.write('app.started', { version: app.getVersion() })) console.error('Glint 无法写入运行日志。');
   app.on('second-instance', openSettings);
   app.on('window-all-closed', () => {});
   app.on('before-quit', () => { quitting = true; abort?.abort(); clearTimeout(captureTimer); globalShortcut.unregisterAll(); host?.kill(); });
