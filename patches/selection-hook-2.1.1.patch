@@ -297,7 +297,7 @@ index 05c0fc1..b367e9c 100644
                # Enable C++ exception handling (/EHsc)
 -              "ExceptionHandling": "1" 
 +              "ExceptionHandling": "1",
-+              "AdditionalOptions": ["/std:c++17"] 
++              "AdditionalOptions": ["/std:c++20"] 
              }
            }
          }],

@@ -26,6 +26,8 @@ preferences or evicting existing entries. It deletes only its own generated test
 records and restores the clipboard. Regular Electron smoke checks capture behavior.
 
 `npm ci` applies and compiles the patch using Python and Visual Studio C++ tools.
+The native module and history tests use C++20 so C++/WinRT uses standard coroutines,
+without relying on the experimental coroutine headers removed by newer MSVC.
 Builds verify its source and binary fingerprint; the patched binary replaces the
 Windows x64 prebuild used in both development and packaged apps. Do not update
 the dependency without reviewing and regenerating this patch. Upstream's MIT

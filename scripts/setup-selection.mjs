@@ -35,7 +35,7 @@ export function setupSelection() {
   }
   console.log('Building Glint selection compatibility patch...');
   const build = run(process.execPath, [require.resolve('node-gyp/bin/node-gyp.js'), 'rebuild', '--arch=x64'], folder);
-  if (build.status !== 0) throw new Error(`Native build failed. Install Python and Visual Studio C++ build tools.\n${build.stdout}\n${build.stderr}`);
+  if (build.status !== 0) throw new Error(`Native build failed. Check the compiler diagnostics below.\n${build.stdout}\n${build.stderr}`);
   copyFileSync(path.join(folder, 'build/Release/selection-hook.node'), binary);
   writeFileSync(stampPath, JSON.stringify({ version: '2.1.1', fingerprint, binary: digest(readFileSync(binary)) }, null, 2) + '\n');
   console.log('Glint selection compatibility patch ready.');
