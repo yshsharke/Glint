@@ -14,6 +14,51 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  linux:
+    name: Linux checks (X11)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+      - run: sudo apt-get update && sudo apt-get install -y libevdev2 libxtst6 libxfixes3 libwayland-client0 libgtk-3-0t64 libnss3 libasound2t64 xvfb
+      - run: npm ci
+      - run: npm run setup:electron
+      - name: Configure Electron's sandbox helper
+        run: |
+          sudo chown root:root node_modules/electron/dist/chrome-sandbox
+          sudo chmod 4755 node_modules/electron/dist/chrome-sandbox
+      - run: npm run check
+      - run: xvfb-run -a npm run smoke:records
+        env:
+          XDG_SESSION_TYPE: x11
+      - run: npx electron-builder --linux --x64 --dir --publish never --config.electronDist=node_modules/electron/dist
+      - name: Configure packaged sandbox helper
+        run: |
+          sudo chown root:root release/linux-unpacked/chrome-sandbox
+          sudo chmod 4755 release/linux-unpacked/chrome-sandbox
+      - run: xvfb-run -a npm run package:verify:linux
+        env:
+          XDG_SESSION_TYPE: x11
+      - name: Upload Linux smoke failure reports
+        if: failure()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: linux-smoke-failure-reports
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            work/smoke-summary.json
+            work/smoke-*/work/smoke-error.txt
+            work/smoke-*/work/smoke-report.json
+            work/smoke-*/work/*.png
+            work/linux-package-check-*/work/smoke-error.txt
+            work/linux-package-check-*/launch.log
   check:
     name: Windows checks
     runs-on: windows-latest

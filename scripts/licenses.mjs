@@ -32,6 +32,7 @@ export async function buildLicenses() {
     ['node_modules/selection-hook/LICENSE', 'selection-hook-LICENSE'],
     ['node_modules/node-addon-api/LICENSE.md', 'node-addon-api-LICENSE'],
     ['node_modules/node-gyp-build/LICENSE', 'node-gyp-build-LICENSE'],
+    ['node_modules/electron-builder/LICENSE', 'electron-builder-LICENSE'],
     ['node_modules/electron/dist/LICENSE', 'electron-LICENSE'],
     ['node_modules/electron/dist/LICENSES.chromium.html', 'LICENSES.chromium.html']
   ];
