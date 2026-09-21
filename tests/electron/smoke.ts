@@ -1,8 +1,9 @@
-import { app, BrowserWindow, clipboard, ClipboardItem, screen } from 'electron';
+import { app, BrowserWindow, clipboard, ClipboardItem, globalShortcut, screen } from 'electron';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { defaults } from '../../src/core';
+import { platformDefaults } from '../../src/platform';
 import type { Settings, Selection } from '../../src/core';
 import type { ApplicationRuntime } from '../../src/main';
 
@@ -121,14 +122,67 @@ async function runSettingsSmoke(runtime: ApplicationRuntime) {
   await fs.promises.writeFile(path.join(folder, 'settings-small.png'), (await runtime.setup!.webContents.capturePage()).toPNG());
   runtime.setup!.setSize(920, 640);
   await ui("document.querySelector('[data-page=triggers]').click()");
-  for (const method of ['clipboard', 'auto', 'accessibility', 'clipboard']) {
+  const linux = runtime.platform.startsWith('linux');
+  if (linux) {
+    const keySave = await runtime.setup!.webContents.executeJavaScript("(async () => window.glint.save((await window.glint.snapshot()).settings, 'glint-test-key'))()");
+    assert.equal(keySave.ok, false, 'Linux smoke uses basic_text and must refuse credential storage');
+    assert.equal((await runtime.setup!.webContents.executeJavaScript('window.glint.snapshot()')).hasKey, false);
+    for (const method of ['clipboard', 'auto']) {
+      assert.equal(await runtime.setup!.webContents.executeJavaScript(`document.querySelector('[data-selection-method=${method}]').disabled`), true);
+      const response = await runtime.setup!.webContents.executeJavaScript(`(async () => window.glint.save({ ...(await window.glint.snapshot()).settings, selectionMethod: '${method}' }))()`);
+      assert.equal(response.ok, false, 'IPC rejects unsupported Linux capture modes');
+    }
+    assert.equal(await runtime.setup!.webContents.executeJavaScript("document.querySelector('[data-apps]').disabled"), runtime.platform === 'linux-wayland');
+    if (runtime.platform === 'linux-wayland') {
+      const response = await runtime.setup!.webContents.executeJavaScript("(async () => window.glint.save({ ...(await window.glint.snapshot()).settings, excludedApps: ['private-app'] }))()");
+      assert.equal(response.ok, false, 'Wayland must not silently accept ineffective exclusions');
+      const config = fs.readFileSync(runtime.configPath, 'utf8');
+      try {
+        const imported = { ...structuredClone(runtime.settings), trigger: 'automatic', selectionMethod: 'clipboard', excludedApps: ['private-app'] };
+        const original = JSON.stringify({ settings: imported, encryptedKey: '' });
+        fs.writeFileSync(runtime.configPath, original);
+        runtime.load();
+        assert.equal(fs.readFileSync(runtime.configPath, 'utf8'), original, 'opening another session must not rewrite valid saved preferences');
+        assert.deepEqual(runtime.settings.excludedApps, []);
+        assert.equal(runtime.settings.trigger, 'shortcut');
+        assert.equal(runtime.settings.selectionMethod, 'accessibility');
+        const save = await runtime.setup!.webContents.executeJavaScript("(async () => window.glint.save({ ...(await window.glint.snapshot()).settings, density: 'compact' }))()");
+        assert.equal(save.ok, true, save.error);
+        const persisted = JSON.parse(fs.readFileSync(runtime.configPath, 'utf8'));
+        assert.deepEqual(persisted.settings.excludedApps, ['private-app']);
+        assert.equal(persisted.settings.trigger, 'automatic');
+        assert.equal(persisted.settings.selectionMethod, 'clipboard');
+        assert.equal(persisted.waylandTrigger, 'shortcut');
+        const automatic = await runtime.setup!.webContents.executeJavaScript("(async () => window.glint.save({ ...(await window.glint.snapshot()).settings, trigger: 'automatic' }))()");
+        assert.equal(automatic.ok, true, automatic.error);
+        runtime.load();
+        assert.equal(runtime.settings.trigger, 'automatic', 'Wayland trigger choice survives restart independently');
+      } finally {
+        fs.writeFileSync(runtime.configPath, config);
+        runtime.load(); runtime.configureHost(); runtime.broadcast();
+        await ui("document.querySelector('[data-revert]').click()");
+      }
+      const saved = structuredClone(runtime.settings);
+      globalShortcut.unregister(saved.shortcut);
+      runtime.settings.shortcut = 'UnavailableShortcut'; runtime.status.shortcutReady = false;
+      try {
+        const response = await runtime.setup!.webContents.executeJavaScript("(async () => window.glint.save({ ...(await window.glint.snapshot()).settings, trigger: 'automatic' }))()");
+        assert.equal(response.ok, true, 'automatic capture remains configurable without a working shortcut service');
+        assert.equal(runtime.status.shortcutReady, false, 'saving does not falsely report successful registration');
+      } finally {
+        const response = await runtime.setup!.webContents.executeJavaScript(`window.glint.save(${JSON.stringify(saved)})`);
+        assert.equal(response.ok, true, `restore the smoke shortcut: ${response.error || ''}`);
+      }
+    }
+  }
+  for (const method of linux ? ['accessibility'] : ['clipboard', 'auto', 'accessibility', 'clipboard']) {
     await ui(`document.querySelector('[data-selection-method=${method}]').click()`);
     assert.equal(await runtime.setup!.webContents.executeJavaScript(`document.querySelector('[data-selection-method=${method}]').getAttribute('aria-pressed')`), 'true', 'selection method updates the draft');
     assert.equal(await runtime.setup!.webContents.executeJavaScript("document.querySelectorAll('[data-selection-method][aria-pressed=true]').length"), 1, 'selection methods are mutually exclusive');
   }
   await ui("document.querySelector('[data-revert]').click()");
   assert.equal(await runtime.setup!.webContents.executeJavaScript("document.querySelector('[data-selection-method=accessibility]').getAttribute('aria-pressed')"), 'true', 'revert restores selection method');
-  for (const method of ['clipboard', 'auto', 'accessibility']) {
+  for (const method of linux ? ['accessibility'] : ['clipboard', 'auto', 'accessibility']) {
     assert.equal((await runtime.setup!.webContents.executeJavaScript(`(async () => window.glint.save({ ...(await window.glint.snapshot()).settings, selectionMethod: '${method}' }))()`)).ok, true);
     await until(() => runtime.status.hook === 'ready', 'engine restarts after changing selection method');
     assert.equal(runtime.settings.selectionMethod, method, 'saved method reaches the main process');
@@ -227,8 +281,11 @@ async function runRecordsSmoke(runtime: ApplicationRuntime) {
     assert.equal(JSON.parse(received).model, 'local-test');
     assert.ok(JSON.parse(received).messages[0].content.includes('Good tools'));
     await wait(250);
-    assert.equal(runtime.resultWindow!.isMaximizable(), false);
-    assert.equal(runtime.resultWindow!.isMinimizable(), false);
+    // Electron documents these getters as always true on Linux.
+    if (process.platform !== 'linux') {
+      assert.equal(runtime.resultWindow!.isMaximizable(), false);
+      assert.equal(runtime.resultWindow!.isMinimizable(), false);
+    }
     const resultLayout = await runtime.resultWindow!.webContents.executeJavaScript(`(() => {
       const footer = [...document.querySelectorAll('.result-footer button')];
       return {
@@ -449,7 +506,7 @@ async function runRecordsSmoke(runtime: ApplicationRuntime) {
     await untilUI("!document.querySelector('[data-history-kind=smoke_summary]') && !!document.querySelector('.history-content')", 'removed category falls back to another instruction');
     await runtime.resultWindow!.webContents.executeJavaScript("document.querySelector('[data-close-result]').click()");
     await until(() => !runtime.resultWindow, 'custom close button closes the result card');
-    runtime.settings = structuredClone(defaults); runtime.persist(runtime.settings, ''); runtime.configureHost();
+    runtime.settings = platformDefaults(runtime.platform); runtime.persist(runtime.settings, ''); runtime.configureHost();
     const report = { passed: true, nativeHook: runtime.status.hook, shortcut: runtime.status.shortcutReady, checks: ['local SSE requests', 'record save, retry, copy, delete and re-record', 'action database isolation', 'history refresh and dynamic categories'], memory: app.getAppMetrics().map(m => ({ type: m.type, memory: m.memory })), note: 'Live selection in third-party applications requires manual verification. Memory is a test-session snapshot with open windows, not an idle benchmark.' };
     fs.writeFileSync(path.join(folder, 'smoke-report.json'), JSON.stringify(report, null, 2));
     console.log('Glint records smoke passed:', report.checks.join(', '));
@@ -458,10 +515,12 @@ async function runRecordsSmoke(runtime: ApplicationRuntime) {
 }
 async function runNativeSmoke(runtime: ApplicationRuntime) {
   const { wait, until, folder } = await prepareScenario(runtime);
+  const initialClipboard = runtime.platform.startsWith('linux') ? await clipboard.readText() : undefined;
   app.setAccessibilitySupportEnabled(true);
   const fixtureText = 'Glint native selection fixture';
   const fixture = new BrowserWindow({ width: 500, height: 260, frame: false, alwaysOnTop: true, show: false, title: 'Glint native selection test', webPreferences: { sandbox: true, nodeIntegration: false, contextIsolation: true } });
   const attempts: unknown[] = [];
+  const checks: string[] = [];
   let passed = false;
   try {
     assert.equal(runtime.settings.selectionMethod, 'accessibility', 'initial native test must not use clipboard');
@@ -494,8 +553,60 @@ async function runNativeSmoke(runtime: ApplicationRuntime) {
       diagnostic.process = runtime.selection?.app ?? '';
       if (runtime.selection?.text === fixtureText) break;
     }
-    assert.equal(runtime.selection?.text, fixtureText, 'Native UI Automation should read the controlled selection');
+    assert.equal(runtime.selection?.text, fixtureText, 'Native capture should read the controlled selection');
     assert.equal(runtime.selection?.demo, false);
+    if (runtime.platform.startsWith('linux')) {
+      assert.equal(runtime.selection?.method, 'PRIMARY', 'Linux capture must come from PRIMARY');
+      if (runtime.platform === 'linux-wayland') assert.equal(runtime.selection?.app, '未知应用');
+      await until(() => !!runtime.toolbar?.isVisible(), 'Linux toolbar appears');
+      await runtime.toolbar!.webContents.executeJavaScript("document.querySelector('[data-dismiss-toolbar]').click()");
+      await until(() => !runtime.toolbar?.isVisible(), 'explicit close works without global input events');
+      runtime.settings.enabled = false; runtime.configureHost();
+      await until(() => runtime.status.hook === 'paused', 'Linux capture pauses');
+      runtime.captureSelection();
+      assert.equal(runtime.capturePending, false);
+      runtime.settings.enabled = true; runtime.configureHost();
+      await until(() => runtime.status.hook === 'ready', 'Linux capture resumes');
+      checks.push('PRIMARY capture', 'pause', 'resume', 'explicit toolbar dismissal');
+      if (runtime.platform === 'linux-x11') {
+        const source = runtime.selection!.app;
+        assert.notEqual(source, '未知应用', 'X11 identifies the source WM_CLASS');
+        const excluded = runtime.settings.excludedApps;
+        runtime.settings.excludedApps = [source]; runtime.status.hook = 'starting'; runtime.configureHost();
+        await until(() => runtime.status.hook === 'ready', 'X11 exclusion configured');
+        runtime.selection = undefined;
+        fixture.focus(); fixture.webContents.focus();
+        runtime.captureSelection();
+        await until(() => !runtime.capturePending, 'excluded X11 capture finishes');
+        assert.equal(runtime.selection, undefined, 'X11 exclusions block PRIMARY capture');
+        runtime.settings.excludedApps = excluded; runtime.status.hook = 'starting'; runtime.configureHost();
+        await until(() => runtime.status.hook === 'ready', 'X11 exclusion removed');
+        runtime.captureSelection();
+        await until(() => runtime.selection?.text === fixtureText, 'X11 capture recovers after removing exclusion');
+        checks.push('X11 source identity and exclusions');
+      }
+      // sendInputEvent updates the fixture and PRIMARY, but does not inject an
+      // OS gesture. Only the no-input Wayland backend uses PRIMARY alone.
+      if (runtime.platform === 'linux-wayland' && runtime.status.message.includes('无全局输入事件')) {
+        runtime.selection = undefined;
+        runtime.settings.trigger = 'automatic'; runtime.status.hook = 'starting'; runtime.configureHost();
+        await until(() => runtime.status.hook === 'ready', 'automatic PRIMARY monitoring configured');
+        fixture.focus(); fixture.webContents.focus();
+        await fixture.webContents.executeJavaScript(`document.querySelector('textarea').value = ${JSON.stringify(fixtureText + ' automatic')}; document.querySelector('textarea').focus()`);
+        fixture.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'A', modifiers: ['control'] });
+        fixture.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'A', modifiers: ['control'] });
+        await until(() => runtime.selection?.text === fixtureText + ' automatic', 'automatic PRIMARY selection');
+        assert.equal((runtime.selection as Selection | undefined)?.method, 'PRIMARY');
+        checks.push('Wayland automatic capture without input devices');
+      }
+      runtime.dismissToolbar();
+      runtime.settings.trigger = 'shortcut'; runtime.configureHost();
+      assert.equal(await clipboard.readText(), initialClipboard, 'Linux PRIMARY capture does not replace the regular clipboard');
+      checks.push('regular clipboard unchanged');
+      passed = true;
+      console.log('Glint Linux native smoke passed:', checks.join(', '));
+      return;
+    }
     assert.equal(runtime.selection?.method, 'UI Automation', 'selection must come from UIA');
     assert.equal(runtime.selection?.app.toLowerCase(), path.basename(process.execPath).toLowerCase(), 'process metadata must identify the fixture');
     runtime.dismissToolbar();
@@ -555,7 +666,8 @@ async function runNativeSmoke(runtime: ApplicationRuntime) {
     }
     passed = true;
   } finally {
-    fs.writeFileSync(path.join(folder, 'smoke-report.json'), JSON.stringify({ passed, attempts, hook: runtime.status.hook }, null, 2));
+    fs.writeFileSync(path.join(folder, 'smoke-report.json'), JSON.stringify({ passed, attempts, checks, hook: runtime.status.hook,
+      manualChecks: runtime.platform.startsWith('linux') ? ['OS gesture-triggered capture with input devices', 'desktop portal shortcut authorization'] : [] }, null, 2));
     fixture.destroy();
   }
 

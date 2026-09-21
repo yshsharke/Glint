@@ -16,7 +16,8 @@ export interface Settings {
 export interface Selection { id: number; text: string; app: string; method: string; x: number; y: number; demo: boolean }
 export interface Diagnostic { time: string; message: string }
 export interface Status { hook: 'starting' | 'ready' | 'paused' | 'error'; message: string; shortcutReady: boolean; lastSelection?: { app: string; method: string; length: number }; events: Diagnostic[] }
-export interface Snapshot { settings: Settings; hasKey: boolean; status: Status; selection?: Selection; result?: ResultState; settingsMaximized: boolean }
+export type DesktopPlatform = 'windows' | 'linux-x11' | 'linux-wayland' | 'unsupported';
+export interface Snapshot { platform: DesktopPlatform; settings: Settings; hasKey: boolean; status: Status; selection?: Selection; result?: ResultState; settingsMaximized: boolean }
 export type RecordKind = string;
 export interface RecordSummary { id: string; preview: string; processName: string; createdAt: string }
 export interface SavedRecord { id: string; originalText: string; resultText: string; processName: string; createdAt: string }

@@ -8,8 +8,9 @@ import { RecordStore } from './records';
 import { AppLogger, errorCode } from './logger';
 import { runtimePaths } from './runtime-paths';
 import { isAppPage } from './ipc-origin';
+import { credentialsAvailable, desktopPlatform, platformDefaults, settingsForSession, settingsForStorage, validScreenPoint, validatePlatformSettings, xwaylandRelaunch } from './platform';
 import type { TextSelectionData } from 'selection-hook';
-import { defaults, endpoint, migrateSettings, modelErrorMessage, placeToolbar, readSSE, recordKind, recordFilename, validateActionNames, validateSettings } from './core';
+import { endpoint, migrateSettings, modelErrorMessage, placeToolbar, readSSE, recordKind, recordFilename, validateActionNames, validateSettings } from './core';
 import type { RecordKind, ResultState, Selection, Settings, Snapshot, Status, UIEvent } from './core';
 
 import { runPackageCheck } from './package-check';
@@ -18,6 +19,24 @@ declare const GLINT_ASSET_DIR: string | undefined;
 const assets = GLINT_ASSET_DIR ?? __dirname;
 const packageCheck = process.argv.includes('--package-check');
 const smoke = (GLINT_TEST_BUILD && process.argv.includes('--smoke')) || packageCheck;
+const platform = desktopPlatform(process.platform, process.env);
+// Some AppImage launchers silently add this switch when user namespaces fail.
+if (process.platform === 'linux' && app.commandLine.hasSwitch('no-sandbox')) {
+  console.error('Glint requires the Chromium sandbox. Configure user namespaces or a correctly installed chrome-sandbox helper; do not use --no-sandbox.');
+  app.exit(1);
+}
+// Ozone is initialized before application JS. Direct executable launches need a
+// relaunch; the development launcher and Linux desktop entry pass this up front.
+const appImage = app.isPackaged && process.env.APPIMAGE && process.env.APPDIR ? { file: process.env.APPIMAGE, directory: process.env.APPDIR } : undefined;
+const relaunch = process.platform === 'linux' ? xwaylandRelaunch(process.argv.slice(1), process.execPath, appImage) : undefined;
+if (relaunch) {
+  app.relaunch(relaunch);
+  app.exit(0);
+}
+if (platform === 'linux-wayland' && !smoke) {
+  const features = app.commandLine.getSwitchValue('enable-features').split(',').filter(Boolean);
+  app.commandLine.appendSwitch('enable-features', [...new Set([...features, 'GlobalShortcutsPortal'])].join(','));
+}
 const root = app.getAppPath();
 // An installed app lives in a read-only ASAR. Test profiles must remain writable
 // and separate from the real user's AppData, including portable launches.
@@ -31,7 +50,8 @@ if (smoke) app.commandLine.appendSwitch('force-renderer-accessibility');
 const page = path.join(assets, 'index.html');
 const preload = path.join(assets, 'preload.cjs');
 const configPath = path.join(app.getPath('userData'), 'settings.json');
-const paths = runtimePaths(testRoot, process.env.LOCALAPPDATA || path.join(app.getPath('home'), 'AppData', 'Local'), smoke);
+const paths = runtimePaths(testRoot, process.env.LOCALAPPDATA || path.join(app.getPath('home'), 'AppData', 'Local'), smoke,
+  process.platform === 'linux' ? { home: app.getPath('home'), env: process.env } : undefined);
 const recordsFolder = paths.data;
 let logger: AppLogger | undefined;
 const recordPath = (kind: RecordKind) => path.join(recordsFolder, recordFilename(kind));
@@ -62,7 +82,9 @@ function initializeRecordStores(actions: Settings['actions']) {
     }
   }
 }
-let settings: Settings = structuredClone(defaults);
+let settings: Settings = platformDefaults(platform);
+let storedSettings = structuredClone(settings);
+let waylandTrigger: Settings['trigger'] | undefined;
 let encryptedKey = '';
 let setup: BrowserWindow | undefined;
 let toolbar: BrowserWindow | undefined;
@@ -82,7 +104,10 @@ let abort: AbortController | undefined;
 let saving = false;
 const status: Status = { hook: 'starting', message: '正在启动取词引擎', shortcutReady: false, events: [] };
 
-function snapshot(): Snapshot { return { settings, hasKey: Boolean(encryptedKey), status, selection, result, settingsMaximized: setup?.isMaximized() ?? false }; }
+function snapshot(): Snapshot { return { platform, settings, hasKey: Boolean(encryptedKey), status, selection, result, settingsMaximized: setup?.isMaximized() ?? false }; }
+function canEncryptCredentials() {
+  return credentialsAvailable(process.platform, safeStorage.isEncryptionAvailable(), process.platform === 'linux' ? safeStorage.getSelectedStorageBackend() : undefined);
+}
 function emit(event: UIEvent) {
   for (const win of [setup, toolbar, resultWindow]) if (win && !win.isDestroyed() && !win.webContents.isLoadingMainFrame()) win.webContents.send('glint:event', event);
 }
@@ -94,18 +119,26 @@ function diagnose(message: string) {
   broadcast();
 }
 function persist(next: Settings, key: string) {
+  const saved = settingsForStorage(next, storedSettings, platform);
+  const nextWaylandTrigger = platform === 'linux-wayland' ? next.trigger : waylandTrigger;
   fs.mkdirSync(path.dirname(configPath), { recursive: true });
   const temp = `${configPath}.tmp`;
-  fs.writeFileSync(temp, JSON.stringify({ settings: next, encryptedKey: key }, null, 2), 'utf8');
+  fs.writeFileSync(temp, JSON.stringify({ settings: saved, encryptedKey: key, waylandTrigger: nextWaylandTrigger }, null, 2), 'utf8');
   fs.renameSync(temp, configPath);
+  storedSettings = saved; waylandTrigger = nextWaylandTrigger;
 }
 function load() {
   if (!fs.existsSync(configPath)) return;
   try {
     const saved = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    settings = migrateSettings(saved.settings);
+    storedSettings = migrateSettings(saved.settings);
+    waylandTrigger = ['automatic', 'shortcut'].includes(saved.waylandTrigger) ? saved.waylandTrigger : undefined;
+    settings = settingsForSession(storedSettings, platform, waylandTrigger);
+    if (platform === 'linux-wayland' && storedSettings.excludedApps.length) {
+      diagnose('已保留其他会话的应用排除规则；当前 Wayland 会话无法应用这些规则。');
+    }
     encryptedKey = typeof saved.encryptedKey === 'string' ? saved.encryptedKey : '';
-    if (JSON.stringify(saved.settings) !== JSON.stringify(settings)) {
+    if (JSON.stringify(saved.settings) !== JSON.stringify(storedSettings)) {
       try { persist(settings, encryptedKey); }
       catch { diagnose('设置已升级，但配置暂时无法写入磁盘。'); }
     }
@@ -144,9 +177,9 @@ async function showSelection(data: TextSelectionData, demo = false) {
   if (data.text.length > 50_000) { diagnose('选区超过 50,000 字符，请缩小选区。'); return; }
   let point = screen.getCursorScreenPoint();
   const anchor = data.posLevel >= 3 ? data.endBottom : data.posLevel > 0 ? data.mousePosEnd : undefined;
-  if (anchor && Number.isFinite(anchor.x) && Number.isFinite(anchor.y) && anchor.x !== -99999 && anchor.y !== -99999) point = process.platform === 'win32' ? screen.screenToDipPoint(anchor) : anchor;
+  if (validScreenPoint(anchor)) point = process.platform === 'win32' || process.platform === 'linux' ? screen.screenToDipPoint(anchor) : anchor;
   if (demo && setup) { const bounds = setup.getBounds(); point = { x: bounds.x + bounds.width / 2 + 100, y: bounds.y + 260 }; }
-  const current: Selection = { id: ++serial, text: data.text, app: data.programName || '未知应用', method: demo ? '演示' : ({ 1: 'UI Automation', 3: 'IAccessible', 99: '剪贴板' } as Record<number, string>)[data.method] || '系统取词', x: point.x, y: point.y, demo };
+  const current: Selection = { id: ++serial, text: data.text, app: data.programName || '未知应用', method: demo ? '演示' : ({ 1: 'UI Automation', 3: 'IAccessible', 22: 'PRIMARY', 99: '剪贴板' } as Record<number, string>)[data.method] || '系统取词', x: point.x, y: point.y, demo };
   selection = current;
   logger?.write('selection.accepted', { selectionId: current.id, sourceApp: current.app, method: current.method, inputLength: current.text.length, historyCleanup: data.historyCleanup });
   toolbarSelectionId = current.id;
@@ -177,7 +210,7 @@ function startHost() {
     if (host !== child || quitting) return;
     if (message.type === 'loaded') configureHost();
     else if (message.type === 'ready') {
-      status.hook = message.paused ? 'paused' : 'ready'; status.message = message.paused ? '已暂停划词监听' : '取词引擎已就绪'; diagnose(status.message);
+      status.hook = message.paused ? 'paused' : 'ready'; status.message = message.message || (message.paused ? '已暂停划词监听' : '取词引擎已就绪'); diagnose(status.message);
     } else if (message.type === 'error') {
       clearTimeout(captureTimer); capturePending = false;
       status.hook = 'error'; status.message = `取词引擎异常：${message.message}`; diagnose(status.message);
@@ -186,10 +219,11 @@ function startHost() {
     } else if (message.type === 'captured' && message.id === requestSerial) {
       clearTimeout(captureTimer); capturePending = false;
       if (message.data) void showSelection(message.data).catch(error => diagnose(String(error)));
-      else diagnose('未读取到选中文字：请检查应用排除规则，或为需要的场景开启复制取词。');
+      else diagnose(process.platform === 'linux' ? '未读取到 PRIMARY 选区：请确认应用提供选区，且合成器支持 data-control。' : '未读取到选中文字：请检查应用排除规则，或为需要的场景开启复制取词。');
     } else if (message.type === 'dismiss') dismissToolbar();
     else if (message.type === 'mouse-down' && toolbar?.isVisible()) {
-      const point = process.platform === 'win32' ? screen.screenToDipPoint(message.data) : message.data;
+      if (!validScreenPoint(message.data)) return;
+      const point = process.platform === 'win32' || process.platform === 'linux' ? screen.screenToDipPoint(message.data) : message.data;
       const rect = toolbar.getBounds();
       if (point.x < rect.x || point.x > rect.x + rect.width || point.y < rect.y || point.y > rect.y + rect.height) dismissToolbar();
     }
@@ -269,6 +303,7 @@ async function generate(prompt: string, text: string, state: ResultState, contro
   let lastPublish = 0;
   try {
     if (!settings.provider.model) throw new Error('请先在「模型」中填写模型名称和 API 地址。');
+    if (encryptedKey && !canEncryptCredentials()) throw new Error('系统密钥环不可用，请解锁密钥环后重试。');
     const key = encryptedKey ? safeStorage.decryptString(Buffer.from(encryptedKey, 'base64')) : '';
     const response = await fetch(endpoint(settings.provider.baseUrl), { method: 'POST', headers: { 'Content-Type': 'application/json', ...(key ? { Authorization: `Bearer ${key}` } : {}) }, body: JSON.stringify({ model: settings.provider.model, stream: true, messages: [{ role: 'user', content: prompt.split('{text}').join(text) }] }), signal: controller.signal });
     logger?.write('model.response', { requestId: state.id, status: response.status });
@@ -341,23 +376,27 @@ function installIPC() {
     if (saving) return { ok: false, error: '正在保存，请稍后重试。' };
     saving = true;
     let newShortcut: string | undefined;
+    let shortcutReady = status.shortcutReady;
     try {
       const next = validateSettings(input);
+      validatePlatformSettings(next, platform);
       validateActionNames(next, settings);
       if (keyUpdate !== undefined && (typeof keyUpdate !== 'string' || keyUpdate.length > 4096)) throw new Error('API Key 格式无效。');
       let key = encryptedKey;
       if (keyUpdate !== undefined) {
-        if (keyUpdate && !safeStorage.isEncryptionAvailable()) throw new Error('系统凭据加密暂不可用，无法保存 API Key。');
+        if (keyUpdate && !canEncryptCredentials()) throw new Error('系统凭据加密暂不可用，无法保存 API Key。Linux 需要已解锁的系统密钥环。');
         key = keyUpdate ? safeStorage.encryptString(keyUpdate).toString('base64') : '';
       }
       if (next.shortcut !== settings.shortcut || !status.shortcutReady) {
-        if (!registerShortcut(next.shortcut)) throw new Error('快捷键无效或已被其他应用占用。');
-        newShortcut = next.shortcut;
+        shortcutReady = registerShortcut(next.shortcut);
+        const automaticWithoutShortcut = platform === 'linux-wayland' && next.trigger === 'automatic' && next.shortcut === settings.shortcut;
+        if (!shortcutReady && !automaticWithoutShortcut) throw new Error('快捷键无效、已被占用或桌面未提供快捷键服务。');
+        if (shortcutReady) newShortcut = next.shortcut;
       }
       persist(next, key);
-      if (newShortcut && settings.shortcut !== newShortcut) globalShortcut.unregister(settings.shortcut);
+      if (newShortcut && status.shortcutReady && settings.shortcut !== newShortcut) globalShortcut.unregister(settings.shortcut);
       const selectionMethodChanged = next.selectionMethod !== settings.selectionMethod;
-      settings = next; encryptedKey = key; status.shortcutReady = true;
+      settings = next; encryptedKey = key; status.shortcutReady = shortcutReady;
       initializeRecordStores(settings.actions);
       // Discard in-flight results acquired with the previous retrieval strategy.
       if (selectionMethodChanged) { selection = undefined; startHost(); } else configureHost();
@@ -447,7 +486,7 @@ else {
     installIPC();
     tray = new Tray(createIcon(32)); tray.setToolTip('Glint · 选中文字，即刻行动'); tray.on('click', openSettings); updateTray();
     status.shortcutReady = registerShortcut(settings.shortcut);
-    if (!status.shortcutReady) diagnose('快捷键注册失败，请在触发设置中修改。');
+    if (!status.shortcutReady) diagnose(platform === 'linux-wayland' ? '快捷键注册失败，请检查桌面 GlobalShortcuts portal 或修改快捷键。' : '快捷键注册失败，请在触发设置中修改。');
     startHost(); openSettings();
     if (smoke) {
       try {
@@ -469,10 +508,12 @@ else {
 // Internal runtime seam for startup probes and the separately built test runner.
 function applicationRuntime() {
   return {
+    get platform() { return platform; },
     get broadcast() { return broadcast; },
     get capturePending() { return capturePending; },
     get captureSelection() { return captureSelection; },
     get configPath() { return configPath; },
+    get load() { return load; },
     get configureHost() { return configureHost; },
     get dismissToolbar() { return dismissToolbar; },
     get openRecordStore() { return openRecordStore; },

@@ -26,24 +26,26 @@ function Model() {
     <Field label="API Key" hint="本地模型可留空"><Input type="password" value={keyUpdate || ''} autoComplete="off" input={controlData({ 'data-key': '' })}
       placeholder={snapshot.hasKey && keyUpdate === undefined ? '已保存密钥 · 留空保留原密钥' : '粘贴你的 API Key'}
       onChange={(_, data) => ui.updateKey(data.value || undefined)} /></Field>
-    <div className="key-note"><span><Icon name="check" /> 密钥使用 Windows 系统加密后保存在本机</span>{snapshot.hasKey && <Button appearance="transparent" size="small" data-clear-key onClick={() => { ui.updateKey(''); toast('保存设置后将清除密钥。'); }}>清除已保存密钥</Button>}</div>
+    <div className="key-note"><span><Icon name="check" /> {snapshot.platform.startsWith('linux') ? '密钥通过系统密钥环加密后保存在本机' : '密钥使用 Windows 系统加密后保存在本机'}</span>{snapshot.hasKey && <Button appearance="transparent" size="small" data-clear-key onClick={() => { ui.updateKey(''); toast('保存设置后将清除密钥。'); }}>清除已保存密钥</Button>}</div>
   </section></>;
 }
 
 function Triggers() {
-  const { draft } = useAppState();
+  const { draft, snapshot } = useAppState();
+  const linux = snapshot.platform.startsWith('linux');
+  const wayland = snapshot.platform === 'linux-wayland';
   const [apps, setApps] = useState(draft.excludedApps.join('\n'));
   // Preserve empty lines while editing, rather than normalizing the controlled textarea on each key.
   return <><p className="page-description">自动浮现，或用一个快捷键主动呼出。</p><section className="panel form-panel">
     <SettingSwitch label="启用划词助手" description="关闭后停止系统划词监听。" field="enabled" />
     <Select label="触发方式" field="trigger" value={draft.trigger} options={[[ 'automatic', '选中文字后自动显示'], ['shortcut', '仅使用快捷键']]} onChange={value => ui.edit(draft => { draft.trigger = value as Settings['trigger']; })} />
-    <Field label="全局快捷键" hint="例如 CommandOrControl+Alt+G。自动模式下也能使用快捷键。"><Input value={draft.shortcut} spellCheck={false} input={controlData({ 'data-field': 'shortcut' })} onChange={(_, data) => ui.edit(draft => { draft.shortcut = data.value; })} /></Field>
-    <Field label="取词方式" hint={{ accessibility: '通过辅助接口取词，不操作剪贴板。', clipboard: '直接复制选区，完成后恢复剪贴板。', auto: '辅助接口取不到文字时，再尝试复制。' }[draft.selectionMethod]}>
-      <div className="theme-options" role="group" aria-label="取词方式">{([['accessibility', '辅助接口'], ['clipboard', '复制取词'], ['auto', '按需复制']] as const).map(([value, label]) =>
-        <ToggleButton key={value} checked={draft.selectionMethod === value} data-selection-method={value} onClick={() => ui.edit(draft => { draft.selectionMethod = value; })}>{label}</ToggleButton>)}
+    <Field label="全局快捷键" hint={wayland ? '桌面可能要求授权快捷键；需支持 GlobalShortcuts portal。' : '例如 CommandOrControl+Alt+G。自动模式下也能使用快捷键。'}><Input value={draft.shortcut} spellCheck={false} input={controlData({ 'data-field': 'shortcut' })} onChange={(_, data) => ui.edit(draft => { draft.shortcut = data.value; })} /></Field>
+    <Field label="取词方式" hint={linux ? '读取应用提供的 PRIMARY 选区；不支持模拟复制。' : { accessibility: '通过辅助接口取词，不操作剪贴板。', clipboard: '直接复制选区，完成后恢复剪贴板。', auto: '辅助接口取不到文字时，再尝试复制。' }[draft.selectionMethod]}>
+      <div className="theme-options" role="group" aria-label="取词方式">{([['accessibility', linux ? 'PRIMARY 选区' : '辅助接口'], ['clipboard', '复制取词'], ['auto', '按需复制']] as const).map(([value, label]) =>
+        <ToggleButton key={value} disabled={linux && value !== 'accessibility'} checked={draft.selectionMethod === value} data-selection-method={value} onClick={() => ui.edit(draft => { draft.selectionMethod = value; })}>{label}</ToggleButton>)}
       </div>
     </Field>
-    <Field className="excluded-apps-field" label="在这些应用中停用" hint="每行一个程序名。终端默认排除，以避免复制快捷键干扰命令。"><Textarea rows={4} value={apps} resize="none" spellCheck={false} placeholder="例如 WindowsTerminal.exe" textarea={controlData({ 'data-apps': '' })}
+    <Field className="excluded-apps-field" label="在这些应用中停用" hint={wayland ? 'Wayland 不提供来源应用，排除规则不可用；自动模式会接收所有应用的选区。' : linux ? '每行一个应用的 WM_CLASS 名称。' : '每行一个程序名。终端默认排除，以避免复制快捷键干扰命令。'}><Textarea rows={4} disabled={wayland} value={apps} resize="none" spellCheck={false} placeholder={linux ? '例如 konsole' : '例如 WindowsTerminal.exe'} textarea={controlData({ 'data-apps': '' })}
       onChange={(_, data) => { setApps(data.value); ui.edit(draft => { draft.excludedApps = data.value.split(/\r?\n/).map(v => v.trim()).filter(Boolean); }); }} /></Field>
   </section></>;
 }
@@ -66,7 +68,7 @@ function Diagnostics() {
   return <><p className="page-description">查看取词状态和最近事件。运行日志不包含原文、回复或密钥。</p>
     <section className="panel"><div className="panel-heading"><h3>运行状态</h3><Button size="small" data-restart icon={<Icon name="refresh" />} onClick={() => void perform(async () => { await window.glint.restart(); toast('正在重新启动取词引擎'); })}>重启取词引擎</Button></div>
     <div className="diagnostic-row"><span>取词引擎</span><strong>{status.message}</strong></div>
-    <div className="diagnostic-row"><span>全局快捷键</span><strong>{status.shortcutReady ? '注册成功' : '注册失败，请修改快捷键'}</strong></div>
+    <div className="diagnostic-row"><span>全局快捷键</span><strong>{status.shortcutReady ? (snapshot.platform === 'linux-wayland' ? '已请求注册，请确认桌面授权' : '注册成功') : '注册失败，请修改快捷键'}</strong></div>
     <div className="diagnostic-row"><span>上次取词</span><strong>{status.lastSelection ? status.lastSelection.app + ' · ' + status.lastSelection.method + ' · ' + status.lastSelection.length + ' 字符' : '尚未触发'}</strong></div></section>
     <section className="panel events-panel"><div className="panel-heading"><h3>最近事件</h3><span className="subtle-badge">本次会话 · 最近 20 条</span></div>
     <div className="events-list" role="region" aria-label="最近事件" tabIndex={0}>{status.events.length ? status.events.map((e, index) => <div className="log-entry" key={index}><time>{e.time}</time><span>{e.message}</span></div>) : <div className="empty-state">开始划词后，事件会出现在这里。</div>}</div></section>
