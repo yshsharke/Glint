@@ -25,6 +25,7 @@ for (const name of ['/dist/main.cjs', '/dist/preload.cjs', '/dist/renderer.js', 
 for (const name of entries) {
   assert.ok(!/^\/(work|src|tests|scripts|\.git|\.github)(\/|$)/.test(name), `Private/development directory in archive: ${name}`);
   assert.ok(!/\.(sqlite(?:-\w+)?|log|map)$/.test(name), `Unwanted packaged file: ${name}`);
+  assert.ok(!/\/prebuilds\/(?!win32-x64(?:\/|$))/.test(name), `Foreign native binary shipped: ${name}`);
 }
 for (const name of ['/dist/licenses/frontend/dependencies.json', '/dist/licenses/frontend/react/LICENSE', '/dist/licenses/frontend/react-dom/LICENSE', '/dist/licenses/frontend/@fluentui__react-motion/LICENSE']) {
   assert.ok(entries.includes(name), `Missing frontend notice: ${name}`);

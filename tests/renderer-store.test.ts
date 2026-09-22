@@ -4,7 +4,7 @@ import { defaults } from '../src/core';
 import type { Snapshot } from '../src/core';
 import { RendererStore } from '../src/ui/renderer-store';
 
-const initial = (): Snapshot => ({ settings: structuredClone(defaults), hasKey: true, settingsMaximized: false, status: { hook: 'ready', message: '', shortcutReady: true, events: [] } });
+const initial = (): Snapshot => ({ platform: 'windows', settings: structuredClone(defaults), hasKey: true, settingsMaximized: false, status: { hook: 'ready', message: '', shortcutReady: true, events: [] } });
 
 test('editing creates a new draft without mutating previous snapshots or saved settings', () => {
   const store = new RendererStore(initial(), true), before = store.getState();

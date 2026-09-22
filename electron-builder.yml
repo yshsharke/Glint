@@ -20,7 +20,8 @@ files:
   - package.json
   - LICENSE
   - THIRD_PARTY_NOTICES.md
-  - '!node_modules/selection-hook/prebuilds/{darwin-*,linux-*,win32-arm64}/**'
+  - '!node_modules/selection-hook/prebuilds/{darwin-*,linux-arm64,win32-arm64}/**'
+  - '!node_modules/selection-hook/prebuilds/!(${os}*)/**'
   - '!node_modules/selection-hook/build/**'
   - '!node_modules/selection-hook/glint-native.json'
 asarUnpack:
@@ -36,6 +37,20 @@ win:
       arch: [x64]
     - target: portable
       arch: [x64]
+linux:
+  executableName: glint
+  executableArgs: [--ozone-platform=x11]
+  syncDesktopName: true
+  icon: dist/brand/glint-256.png
+  category: Utility
+  artifactName: Glint-${version}-linux-${arch}.${ext}
+  target:
+    - target: AppImage
+      arch: [x64]
+    - target: tar.gz
+      arch: [x64]
+appImage:
+  artifactName: Glint-${version}-linux-x64.${ext}
 nsis:
   artifactName: Glint-${version}-windows-${arch}-setup.${ext}
   oneClick: false

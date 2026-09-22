@@ -38,5 +38,7 @@ export function Toolbar({ settings, live = false }: { settings: Settings; live?:
       onClick={() => live ? void perform(async () => { if (selectionId === undefined) return; const r = await window.glint.run(a.id, selectionId); if (!r.ok) toast(r.error || '执行失败', true); }) : toast('点击「测试浮条」体验动作。')}>
       {settings.density === 'compact' ? undefined : a.name}
     </Button>)}</div>
+    {live && snapshot.platform.startsWith('linux') && <Button appearance="subtle" size="small" data-dismiss-toolbar aria-label="关闭浮条" title="关闭浮条"
+      icon={<Icon name="close" />} onClick={() => void perform(() => window.glint.dismiss())} />}
   </div>;
 }

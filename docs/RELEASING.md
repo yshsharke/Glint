@@ -2,6 +2,8 @@
 
 仓库：https://github.com/yshsharke/Glint 。发布物为 Windows x64 安装版、portable 和 `SHA256SUMS.txt`。当前为未签名预览版本，不提供自动更新。
 
+Linux x64 可通过 `npm run package:linux` 本地构建 AppImage、tar.gz 和 `SHA256SUMS-linux.txt`，再运行 `npm run package:verify:linux -- --appimage` 检查解包版与 AppImage 解压启动。Linux 发布前应在目标发行版测试 FUSE 挂载、系统运行库、portal 和原生取词，并完成 AppImage 上游工具集所带运行库的许可、声明和对应源码审计（见 [第三方说明](../THIRD_PARTY_NOTICES.md)）；启动验证不能代替许可审计。现有 GitHub Release workflow 仍仅发布 Windows 文件。详见 [Linux 说明](LINUX.md)。
+
 ## 本地验证
 
 ```powershell

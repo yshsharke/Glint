@@ -6,7 +6,7 @@
 
 **简体中文** · [English](README.en.md)
 
-Glint 是一款可定制的 Windows 划词助手。阅读时遇到外语、写作时想调整措辞，选中文字即可翻译、润色或搜索，无需来回切换应用。
+Glint 是一款可定制的 Windows 与 Linux 划词助手。阅读时遇到外语、写作时想调整措辞，选中文字即可翻译、润色或搜索，无需来回切换应用。
 
 [下载 Glint](https://github.com/yshsharke/Glint/releases) · [反馈问题](https://github.com/yshsharke/Glint/issues) · [更新记录](CHANGELOG.md)
 
@@ -29,10 +29,12 @@ GitHub 自动生成的 **Source code** 是源码，不是应用下载包。目�
 
 **Portable 是免安装版，设置和记录仍保存在当前 Windows 用户的 AppData 中，不随 exe 移动。** 安装版和 portable 版共享这些数据，同一用户同时只运行一个 Glint。
 
+Linux x64 已提供源码预览支持，可用于 X11 以及 KDE Plasma、Hyprland 等兼容的 Wayland 桌面；现有发布下载仍为 Windows 版本。构建、本地 AppImage/tar 打包和兼容限制见 [Linux 使用说明](docs/LINUX.md)。
+
 ## 一分钟上手
 
 1. 打开 Glint，在「模型」中填写服务商提供的 API 地址、模型名称和 API Key，点击「保存设置」。支持 OpenAI 兼容接口，也可以连接本地模型服务。Glint 不提供内置模型或额度。
-2. 在其他应用里选中文字，浮条会自动出现。也可以按 **Ctrl + Alt + G** 主动取词。
+2. 在其他应用里选中文字，浮条会自动出现。也可以按 **Ctrl + Alt + G** 主动取词。Wayland 默认使用快捷键模式，桌面可能要求授权快捷键。
 3. 点击「翻译」「润色」等动作，结果会显示在独立的小卡片里。搜索无需配置模型。
 
 浮条左侧的 Glint 图标可打开设置。关闭设置窗口后，Glint 会继续在系统托盘运行；左键单击托盘图标重新打开设置，右键菜单提供「打开设置」「停止划词／启用划词」和「退出」。也可以在设置左下角点击「退出 Glint」完全退出。
@@ -41,8 +43,10 @@ GitHub 自动生成的 **Source code** 是源码，不是应用下载包。目�
 
 - **不止翻译。** 动作类型分为「指令」和「搜索」；修改提示词即可添加自己的指令。最多 12 个动作，自由排序、启用或隐藏。新建时填写显示名称和唯一英文名称（如「总结 / summary」）；英文名称仅在创建时显示，用于关联数据库，保存后固定。
 - **统一的图标。** 从内置 Lucide 图标库中搜索和选择，离线可用。
-- **控制触发方式。** 选择自动划词或快捷键模式，排除不想触发的应用。取词方式可选“辅助接口”“复制取词”或“按需复制”；复制后会恢复剪贴板。
+- **控制触发方式。** 选择自动划词或快捷键模式。Windows 支持应用排除，以及“辅助接口”“复制取词”或“按需复制”；复制后会恢复剪贴板。Linux 能力见下方说明。
 - **贴近 Windows 的外观。** 浅色、深色或跟随系统，搭配四种强调色和两种浮条密度。
+
+Linux 仅读取 PRIMARY 选区，不支持复制取词；Wayland 无法识别或排除来源应用，当前后端不支持 GNOME Wayland。界面通过 XWayland 定位浮条，取词仍使用原生 Wayland。Wayland 自动模式会接收所有应用的选区；没有全局输入事件时，可点击浮条关闭按钮。
 
 <img src="docs/assets/settings.png" width="760" alt="Glint 0.2.0 动作设置页：动作列表、名称、图标、类型、提示词和浮条预览">
 
@@ -64,7 +68,9 @@ GitHub 自动生成的 **Source code** 是源码，不是应用下载包。目�
 
 只有点击 AI 动作才会将文字发送给你配置的模型服务；点击搜索会在浏览器中交给 Google。Glint 不包含遥测，选中文字不会自动存入记录数据库。
 
-API Key 使用 Windows 系统保护加密保存；手动记录的原文和结果保存在未加密的本地 SQLite 数据库中。设置位于 `%APPDATA%\Glint`，记录和日志位于 `%LOCALAPPDATA%\Glint`。更多内容见 [隐私说明](docs/PRIVACY.md)。
+Windows 上的 API Key 使用系统保护加密保存；手动记录的原文和结果保存在未加密的本地 SQLite 数据库中。设置位于 `%APPDATA%\Glint`，记录和日志位于 `%LOCALAPPDATA%\Glint`。更多内容见 [隐私说明](docs/PRIVACY.md)。
+
+Linux 的 API Key 需要已解锁的系统密钥环，不会降级为明文保存。配置、记录和日志遵循 XDG 路径，默认位于 `~/.config/Glint`、`~/.local/share/Glint/data` 和 `~/.local/state/Glint/logs`。
 
 ## 常见问题
 
@@ -76,7 +82,7 @@ API Key 使用 Windows 系统保护加密保存；手动记录的原文和结果
 
 **如何卸载？** 安装版可从 Windows「已安装的应用」卸载；portable 版退出后删除 exe 即可。两者都会保留个人数据，如需一并清除，请按 [隐私说明](docs/PRIVACY.md#删除与备份) 操作。
 
-当前界面为中文。其他平台、ARM64、OCR、原位替换和多轮聊天暂不支持；尚未承诺常驻内存上限。
+当前界面为中文。macOS、ARM64、OCR、原位替换和多轮聊天暂不支持；尚未承诺常驻内存上限。
 
 ## 开源与致谢
 

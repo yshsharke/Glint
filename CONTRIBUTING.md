@@ -14,6 +14,8 @@ npm start
 
 配置在设置页填写；项目不需要 `.env`，不要把真实 API Key、用户配置或数据库放进源码。
 
+Linux x64 也可开发：使用 Node.js 24 和 Git，安装 Electron 与 selection-hook 的系统运行库，执行相同的 `npm ci`、`setup:electron` 和 `npm start`。Linux 直接使用上游原生预编译包，不构建 Windows 补丁。Wayland 需要兼容 data-control 的合成器和 XWayland；依赖、取词限制和路径见 [Linux 说明](docs/LINUX.md)。
+
 `npm run test:clipboard-history` 检查 Windows 历史清理保护规则与系统接口。历史关闭或容量接近上限时跳过真实新增/删除测试，不会清空历史或修改系统开关；测试结束后仅移除本次生成的测试条目。
 
 ## 检查
@@ -28,7 +30,11 @@ npm run smoke
 
 已观察到原生 UIA 受控选区读取间歇性失败，原因尚未确认；再次运行成功不代表该问题已修复。
 
+Linux CI 在 Xvfb 下运行 `check`、`smoke:records` 和解包版启动验证。完整 Linux `smoke` 应在隔离的交互桌面或嵌套合成器执行，并设置 `GLINT_TEST_DESKTOP=1` 确认该会话可丢弃，测试会替换 PRIMARY 选区；这个变量本身不会创建隔离。Wayland 的 portal 授权仍需人工检查。测试不能将缺少显示会话、协议或原生库的情况当作通过。
+
 ## 打包与发布
+
+Linux 使用 `npm run package:linux` 生成 AppImage、tar.gz 和单独的校验文件；`npm run package:verify:linux -- --appimage` 检查归档、解包版与 AppImage 的显式 X11 和直接启动路径。现有自动 Release 流程仍仅发布 Windows 文件。
 
 ```powershell
 npm run package

@@ -6,7 +6,7 @@
 
 [简体中文](README.md) · **English**
 
-Glint is a customizable text selection assistant for Windows. Translate while reading, polish a sentence while writing, or search from a compact toolbar without switching between apps.
+Glint is a customizable text selection assistant for Windows and Linux. Translate while reading, polish a sentence while writing, or search from a compact toolbar without switching between apps.
 
 [Download Glint](https://github.com/yshsharke/Glint/releases) · [Report an issue](https://github.com/yshsharke/Glint/issues) · [Changelog](CHANGELOG.md)
 
@@ -29,10 +29,12 @@ GitHub's **Source code** archives are for development, not ready-to-run download
 
 **Portable means no installation; settings and saved records still live in the current Windows user's AppData folder. They do not travel with the exe.** Both editions share the same data, and only one Glint instance runs per user.
 
+Linux x64 is available as a source-build preview on X11 and compatible Wayland desktops, including KDE Plasma and Hyprland. Existing downloads remain Windows-only. See [Linux setup and limitations](docs/LINUX.md) for builds and local AppImage/tar packaging.
+
 ## Get started
 
 1. Open **模型 (Model)**, enter your provider's API URL, model name and API key, then click **保存设置 (Save settings)**. Glint supports OpenAI-compatible APIs and local model services. It does not include a model subscription or API credits.
-2. Select text in another application to show the toolbar, or press **Ctrl + Alt + G** to capture the current selection.
+2. Select text in another application to show the toolbar, or press **Ctrl + Alt + G** to capture the current selection. Wayland defaults to shortcut mode and may ask you to authorize the shortcut.
 3. Choose **翻译 (Translate)** or **润色 (Polish)** to open a result card. Search works without a model connection.
 
 Click the Glint icon on the toolbar to open settings. Closing settings keeps Glint running in the system tray. Left-click the tray icon to reopen settings; right-click for **打开设置 (Open settings)**, **停止划词 / 启用划词 (Disable / Enable selection)** and **退出 (Quit)**. You can also quit from the bottom-left corner of settings.
@@ -41,8 +43,10 @@ Click the Glint icon on the toolbar to open settings. Closing settings keeps Gli
 
 - **Your own actions.** Choose **指令 (Instruction)** or **搜索 (Search)**, edit prompts and add up to 12 actions. Reorder, enable or hide them. New actions need a display name and a unique English name (such as Summary / summary). The English name is shown only during creation and stays fixed after saving to identify the database.
 - **A consistent icon library.** Browse and search the built-in Lucide icons, available offline.
-- **Control when it appears.** Use automatic selection or a keyboard shortcut and exclude specific apps. Choose accessibility capture, direct copy, or copy when accessibility finds no text. Copy capture restores the clipboard afterward.
+- **Control when it appears.** Use automatic selection or a keyboard shortcut. Windows supports app exclusions, accessibility capture, direct copy, or copy when accessibility finds no text. Copy capture restores the clipboard afterward; Linux capabilities are described below.
 - **A compact Windows-style interface.** Follow the system theme or choose light/dark, with four accent colors and two toolbar densities.
+
+Linux reads PRIMARY selections only; copy capture is unavailable. Wayland cannot identify or exclude source apps, and GNOME Wayland is unsupported by the current backend. Glint uses XWayland for toolbar placement while capturing native Wayland selections. Automatic capture on Wayland observes all applications; use the toolbar's close button when global dismissal events are unavailable.
 
 <img src="docs/assets/settings.png" width="760" alt="Glint 0.2.0 Actions settings showing the action list, name, icon, type, prompt and toolbar preview">
 
@@ -64,7 +68,9 @@ Every **指令 (Instruction)** action—including Translate, Explain, Polish and
 
 Text is sent to your configured model service only when you invoke an AI action. Search opens Google in your browser. Glint contains no telemetry and does not automatically save selected text as a record.
 
-API keys are encrypted using Windows system protection. Manually saved text and results use unencrypted local SQLite databases. Settings are in `%APPDATA%\Glint`; records and logs are in `%LOCALAPPDATA%\Glint`. See the [privacy details](docs/PRIVACY.md) (Chinese).
+On Windows, API keys are encrypted using system protection. Manually saved text and results use unencrypted local SQLite databases. Settings are in `%APPDATA%\Glint`; records and logs are in `%LOCALAPPDATA%\Glint`. See the [privacy details](docs/PRIVACY.md) (Chinese).
+
+On Linux, API keys require an unlocked system keyring; insecure plaintext fallback is refused. Settings, records and logs follow XDG directories, defaulting to `~/.config/Glint`, `~/.local/share/Glint/data` and `~/.local/state/Glint/logs`.
 
 ## Common questions
 
@@ -76,7 +82,7 @@ API keys are encrypted using Windows system protection. Manually saved text and 
 
 **How do I uninstall?** Remove the installed edition through Windows Settings. For portable, quit and delete the exe. Both retain personal data; see the [data removal instructions](docs/PRIVACY.md#删除与备份) if you also want to erase it.
 
-The app interface is currently Chinese. Other platforms, ARM64, OCR, in-place replacement and multi-turn chat are not supported yet. A resident-memory budget has not been established.
+The app interface is currently Chinese. macOS, ARM64, OCR, in-place replacement and multi-turn chat are not supported yet. A resident-memory budget has not been established.
 
 ## Open source
 

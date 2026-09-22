@@ -12,6 +12,9 @@ export async function runPackageCheck(runtime: ApplicationRuntime) {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   assert.equal(runtime.status.hook, 'ready', runtime.status.message);
+  assert.equal(app.commandLine.hasSwitch('no-sandbox'), false, 'Packaged startup must retain the Chromium sandbox');
+  assert.deepEqual(await runtime.setup.webContents.executeJavaScript('({ process: typeof process, require: typeof require })'),
+    { process: 'undefined', require: 'undefined' }, 'The renderer must not expose Node globals');
   assert.equal(await runtime.setup.webContents.executeJavaScript("typeof window.glint.save"), 'function');
   const bridgeResult = await runtime.setup.webContents.executeJavaScript("window.glint.snapshot().then(() => 'ok').catch(error => String(error))");
   assert.equal(bridgeResult, 'ok', `Packaged IPC bridge failed (${runtime.setup.webContents.getURL()}): ${bridgeResult}`);

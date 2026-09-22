@@ -1,5 +1,7 @@
 # selection-hook Windows extension
 
+Linux applies the shared JavaScript/type declarations for build consistency but uses the unmodified upstream Linux x64 prebuild. It does not compile this Windows extension or call its copy-mode API; Linux selection is PRIMARY-only.
+
 `selection-hook-2.1.1.patch` extends the pinned MIT dependency with
 `setClipboardOnly(boolean)`. Both automatic and manual capture pass this flag in
 the existing worker configuration snapshot. When enabled, neither UIA nor MSAA

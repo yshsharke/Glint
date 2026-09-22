@@ -1,6 +1,7 @@
 {
   "name": "glint",
   "productName": "Glint",
+  "desktopName": "com.yshsharke.glint.desktop",
   "version": "0.5.0",
   "private": true,
   "license": "MIT",
@@ -16,7 +17,7 @@
   "engines": {
     "node": "24.x"
   },
-  "description": "A small, customizable selection assistant for Windows.",
+  "description": "A small, customizable selection assistant for Windows and Linux.",
   "main": "dist/main.cjs",
   "scripts": {
     "postinstall": "node scripts/setup-selection.mjs",
@@ -33,6 +34,8 @@
     "smoke:records": "npm run build && node scripts/smoke.mjs records",
     "smoke:native": "npm run build && node scripts/smoke.mjs native",
     "package": "npm run build && electron-builder --win --x64 --publish never && node scripts/checksums.mjs",
+    "package:linux": "npm run build && electron-builder --linux --x64 --publish never && node scripts/checksums.mjs linux",
+    "package:verify:linux": "node scripts/verify-linux-package.mjs",
     "package:verify": "node scripts/verify-package.mjs",
     "package:verify-installer": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-installer.ps1",
     "verify:release": "npm run check && npm run smoke && npm run package && npm run package:verify"

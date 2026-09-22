@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+- 新增 Linux x64 的 X11 / Wayland PRIMARY 取词与 XWayland 浮条支持，保留独立取词进程；Wayland 默认快捷键触发，不支持来源应用排除。
+- Linux 设置与诊断按实际能力显示，浮条提供关闭按钮；记录和日志采用 XDG 目录，API Key 必须使用系统密钥环加密。
+- 切换桌面会话时保留应用排除规则和取词偏好，独立保存 Wayland 触发方式；Linux 原生 smoke 需显式确认使用可丢弃桌面。
+- 修复 AppImage 提取启动后的 XWayland 重启路径，并拒绝 Linux 启动器静默关闭 Chromium 沙箱。
+- 新增 Linux AppImage/tar 打包与启动验证、平台单元测试、Linux 原生 smoke 和 CI 检查，补充中英文使用与开发文档。
+
+- Add Linux x64 PRIMARY capture on X11 and compatible Wayland compositors, with XWayland floating windows and an isolated native host. Wayland defaults to shortcut capture and does not support app exclusions.
+- Reflect Linux capabilities in settings and diagnostics, add explicit toolbar dismissal, use XDG data/log paths and require a real system keyring for API keys.
+- Preserve capture preferences and exclusions across desktop sessions, save Wayland trigger choices separately, and require disposable-desktop acknowledgement for Linux native smoke.
+- Preserve AppImage extraction through XWayland relaunch and refuse Linux launchers that silently disable Chromium's sandbox.
+- Add Linux AppImage/tar packaging and startup verification, platform tests, Linux native smoke coverage, CI checks and documentation.
+
 ## 0.5.0 — 2026-09-21（预览版）
 
 - 触发页新增「辅助接口」「复制取词」「按需复制」三种全局取词方式；旧剪贴板开关自动迁移，切换方式会重启取词引擎并丢弃旧选区。

@@ -8,6 +8,9 @@ const require = createRequire(import.meta.url);
 const scenarios = process.argv.slice(2);
 if (!scenarios.length) scenarios.push('ui', 'records', 'native');
 if (scenarios.some(value => !['ui', 'records', 'native'].includes(value))) throw new Error('Expected ui, records or native');
+if (process.platform === 'linux' && scenarios.includes('native') && process.env.GLINT_TEST_DESKTOP !== '1') {
+  throw new Error('Linux native smoke changes PRIMARY. Run in a disposable desktop or nested compositor with GLINT_TEST_DESKTOP=1.');
+}
 mkdirSync('work', { recursive: true });
 const entry = path.resolve('work/smoke-runner.cjs');
 await build({ entryPoints: ['src/main.ts'], outfile: entry, bundle: true, platform: 'node', format: 'cjs', external: ['electron', 'selection-hook'], target: 'node22',
@@ -19,9 +22,11 @@ for (const scenario of scenarios) {
   const env = { ...process.env, GLINT_SMOKE_ROOT: profile, GLINT_SMOKE_SCENARIO: scenario };
   delete env.ELECTRON_RUN_AS_NODE;
   console.log(`Running ${scenario} smoke in an isolated profile.`);
-  const child = spawn(require('electron'), [entry, '--smoke'], { env, stdio: 'inherit', windowsHide: true });
+  const child = spawn(require('electron'), [entry, '--smoke', ...(process.platform === 'linux' ? ['--ozone-platform=x11', '--password-store=basic'] : [])], { env, stdio: 'inherit', windowsHide: true, detached: process.platform !== 'win32' });
   const timer = setTimeout(() => {
-    if (child.pid) spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+    if (!child.pid) return;
+    if (process.platform === 'win32') spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
+    else { try { process.kill(-child.pid, 'SIGKILL'); } catch {} }
   }, 120000);
   const code = await new Promise((resolve, reject) => {
     child.once('error', reject); child.once('exit', resolve);

@@ -7,7 +7,7 @@ Glint's original code and brand artwork are licensed under MIT. Third-party comp
 | Component | License | Use |
 | --- | --- | --- |
 | [Electron](https://github.com/electron/electron) | MIT, plus bundled component notices | Desktop runtime |
-| [selection-hook](https://github.com/0xfullex/selection-hook) | MIT | Native Windows selection engine, with Glint's [copy-mode patch](patches/README.md) |
+| [selection-hook](https://github.com/0xfullex/selection-hook) | MIT | Windows selection with Glint's [copy-mode patch](patches/README.md), and upstream Linux X11/Wayland PRIMARY capture |
 | [node-addon-api](https://github.com/nodejs/node-addon-api) | MIT | Native addon support for selection-hook |
 | [node-gyp-build](https://github.com/prebuild/node-gyp-build) | MIT | Native addon loader |
 | [Lucide](https://github.com/lucide-icons/lucide) | ISC and notices included in its full LICENSE | Controls and action icons |
@@ -29,11 +29,13 @@ The build copies full license texts into `dist/licenses/`, including Electron's 
 | [esbuild](https://github.com/evanw/esbuild) | MIT | Bundling |
 | [TypeScript](https://github.com/microsoft/TypeScript) | Apache-2.0 | Type checking |
 | [Node.js type definitions](https://github.com/DefinitelyTyped/DefinitelyTyped) | MIT | Development types |
-| [electron-builder](https://github.com/electron-userland/electron-builder) | MIT | Windows installer and portable packaging |
+| [electron-builder](https://github.com/electron-userland/electron-builder) | MIT | Windows installer/portable and Linux AppImage/tar packaging |
 | [Electron ASAR](https://github.com/electron/asar) | MIT | Packaged archive verification |
 | [node-gyp](https://github.com/nodejs/node-gyp) | MIT | Builds the Windows selection compatibility patch |
 
 These tools are installed by npm and are not copied into Glint's renderer bundle. Their license texts accompany the installed packages. Node.js/Electron also include additional third-party notices in their distributions.
+
+AppImage contains a launcher generated from electron-builder's MIT-licensed template; its full license is included as `dist/licenses/electron-builder-LICENSE`. AppImage's native runtime and compatibility libraries come from electron-builder's upstream AppImage toolset, not the npm runtime dependencies. Before distributing Linux binaries, audit that toolset's component licenses, notices and corresponding-source requirements in addition to the application notices above.
 
 The Windows setup and portable launchers are generated with NSIS. NSIS permits generated installers to be distributed under terms of the author's choice; see [NSIS license](https://nsis.sourceforge.io/License). This project uses the unmodified NSIS binaries supplied by electron-builder, rather than redistributing its compiler as part of the app.
 

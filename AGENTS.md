@@ -1,6 +1,6 @@
 # Glint
 
-Windows selection assistant built with Electron, TypeScript and selection-hook.
+Windows and Linux selection assistant built with Electron, TypeScript and selection-hook.
 
 - Keep selection acquisition in `src/selection-host.ts` (Electron utility process). Native UIA calls can block; do not move synchronous capture onto the main/UI thread.
 - Keep rendering sandboxed, with context isolation and a narrow preload bridge. Never expose Node or arbitrary IPC to the renderer.
@@ -11,4 +11,5 @@ Windows selection assistant built with Electron, TypeScript and selection-hook.
 - Consult `docs/REFERENCES.md` when borrowing compatibility ideas from Cherry Studio; preserve upstream license obligations.
 - Run `npm run check` for changes; run `npm run smoke` for window, IPC or native lifecycle changes.
 - Smoke tests use a separate profile and a local fake model. Do not send test text to external services or overwrite the user's profile.
+- Linux native smoke replaces PRIMARY; run it only in a disposable desktop or nested compositor with `GLINT_TEST_DESKTOP=1`.
 - Keep intermediate files and screenshots in ignored `work/`; generated builds in ignored `dist/`.

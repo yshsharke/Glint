@@ -46,4 +46,4 @@ Current differences:
 - The selection module runs in an Electron utility process. A hung manual capture can be terminated without freezing the app.
 - Clipboard fallback is opt-in; terminals are excluded by default.
 - Settings, actions and diagnostics are deliberately small. No knowledge base, agents, chat history or model registry.
-- The prototype supports Windows only. Upstream cross-platform support does not make Glint cross-platform.
+- Glint uses the upstream [Linux PRIMARY backend](https://github.com/0xfullex/selection-hook/blob/v2.1.1/docs/LINUX.md) on X11 and supported Wayland compositors. Its XWayland recommendation, coordinate conversion, input-event fallback and capability limits inform Glint's integration; see [Linux support](LINUX.md). The Windows extension is not compiled on Linux.

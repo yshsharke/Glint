@@ -13,7 +13,7 @@ const run = (command, args, cwd = root) => spawnSync(command, args, { cwd, encod
 const require = createRequire(import.meta.url);
 
 export function setupSelection() {
-  if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('Glint builds require Windows x64.');
+  if (!['win32', 'linux'].includes(process.platform) || process.arch !== 'x64') throw new Error('Glint builds require Windows or Linux x64.');
   if (JSON.parse(readFileSync(path.join(folder, 'package.json'), 'utf8')).version !== '2.1.1') throw new Error('Review the native patch before upgrading selection-hook.');
   const applyArgs = ['apply', '--ignore-space-change', '--directory=node_modules/selection-hook'];
   const check = run('git', [...applyArgs, '--check', patch]);
@@ -23,6 +23,8 @@ export function setupSelection() {
   } else if (run('git', [...applyArgs, '--reverse', '--check', patch]).status !== 0) {
     throw new Error(`selection-hook sources do not match the reviewed patch. Run npm ci.\n${check.stderr}`);
   }
+  // Linux uses the upstream PRIMARY backend; only Windows builds the Glint extension.
+  if (process.platform === 'linux') return;
   for (const name of ['clipboard-history.h', 'clipboard-history.cpp', 'clipboard-history-policy.h'])
     copyFileSync(path.join(root, 'native', name), path.join(folder, 'src/windows/lib', name));
   const sources = ['binding.gyp', 'index.js', 'index.d.ts', 'src/windows/core/types.h', 'src/windows/core/engine.cc', 'src/windows/selection_hook.cc', 'src/windows/lib/clipboard.cc', 'src/windows/lib/clipboard-history.h', 'src/windows/lib/clipboard-history.cpp', 'src/windows/lib/clipboard-history-policy.h'];

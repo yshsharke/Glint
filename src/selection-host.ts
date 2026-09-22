@@ -1,6 +1,8 @@
 import path from 'node:path';
 import type { Settings } from './core';
 import type { SelectionHookConstructor, SelectionHookInstance } from 'selection-hook';
+import { configureSelectionHook } from './selection-config';
+import { desktopPlatform } from './platform';
 
 const port = process.parentPort;
 if (!port) throw new Error('Selection host must run as an Electron utility process.');
@@ -24,19 +26,8 @@ port.on('message', (event: { data: { type: string; settings?: Settings; id?: num
   if (!hook) return;
   try {
     if (message.type === 'configure' && message.settings) {
-      const settings = message.settings;
-      if (!settings.enabled) { hook.stop(); send({ type: 'ready', paused: true }); return; }
-      if (!hook.isRunning() && !hook.start({ enableClipboard: false, enableMouseMoveEvent: false, selectionPassiveMode: true })) throw new Error('无法启动全局监听。');
-      hook.setGlobalFilterMode(Hook.FilterMode.EXCLUDE_LIST, [
-        ...settings.excludedApps,
-        ...(message.testing ? [] : [path.basename(process.execPath).toLowerCase()])
-      ]);
-      hook.setFineTunedList(Hook.FineTunedListType.EXCLUDE_CLIPBOARD_CURSOR_DETECT, ['acrobat.exe', 'wps.exe', 'cajviewer.exe']);
-      hook.setFineTunedList(Hook.FineTunedListType.INCLUDE_CLIPBOARD_DELAY_READ, ['acrobat.exe', 'wps.exe', 'cajviewer.exe', 'foxitphantom.exe', 'zotero.exe']);
-      if (!hook.setClipboardOnly(settings.selectionMethod === 'clipboard')) throw new Error('取词引擎缺少复制模式支持，请重新构建或安装 Glint。');
-      settings.selectionMethod === 'accessibility' ? hook.disableClipboard() : hook.enableClipboard();
-      hook.setSelectionPassiveMode(settings.trigger === 'shortcut');
-      send({ type: 'ready', paused: false });
+      const state = configureSelectionHook(hook, Hook, message.settings, desktopPlatform(process.platform, process.env), path.basename(process.execPath).toLowerCase(), message.testing);
+      send({ type: 'ready', ...state });
     } else if (message.type === 'capture') {
       const data = hook.getCurrentSelection();
       send({ type: 'captured', id: message.id, data });
