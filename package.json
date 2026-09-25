@@ -56,7 +56,7 @@
     "electron-builder": "26.15.3",
     "esbuild": "0.28.2",
     "lucide-static": "1.47.0",
-    "node-gyp": "12.4.0",
+    "node-gyp": "13.0.2",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "typescript": "5.9.3"
