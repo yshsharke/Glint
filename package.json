@@ -59,7 +59,7 @@
     "js-mdict": "6.0.8",
     "lucide-static": "1.47.0",
     "lzo1x": "1.0.1",
-    "node-gyp": "12.4.0",
+    "node-gyp": "13.1.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "typescript": "5.9.3"
