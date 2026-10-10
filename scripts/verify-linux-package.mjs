@@ -11,6 +11,10 @@ for (const name of ['ecdict.sqlite', 'LICENSE', 'manifest.json']) {
   assert.deepEqual(readFileSync(`release/linux-unpacked/resources/dictionary/${name}`), readFileSync(`dist/dictionary/${name}`), `Packaged dictionary mismatch: ${name}`);
 }
 const appImage = process.argv.includes('--appimage');
+const setuidSandbox = process.argv.includes('--setuid-sandbox');
+assert.ok(!appImage || !setuidSandbox, '--setuid-sandbox requires the installed helper in linux-unpacked; verify AppImages separately');
+// Exercise Ubuntu's fallback even on hosts where unprivileged user namespaces work.
+const sandboxArgs = setuidSandbox ? ['--disable-namespace-sandbox'] : [];
 if (appImage) assert.ok(existsSync(`release/Glint-${version}-linux-x64.AppImage`), 'Build the AppImage before verifying it');
 const archive = 'release/linux-unpacked/resources/app.asar';
 const entries = listPackage(archive);
@@ -34,18 +38,27 @@ const binary = 'node_modules/selection-hook/prebuilds/linux-x64/selection-hook.n
 assert.deepEqual(readFileSync(`release/linux-unpacked/resources/app.asar.unpacked/${binary}`), readFileSync(binary), 'Ship the upstream Linux native binary unpacked');
 
 mkdirSync('work', { recursive: true });
-const unsafeProfile = mkdtempSync(path.resolve('work', 'linux-package-check-'));
-const unsafeEnv = { ...process.env, GLINT_SMOKE_ROOT: unsafeProfile };
-delete unsafeEnv.ELECTRON_RUN_AS_NODE;
-const unsafe = spawn(path.resolve('release/linux-unpacked/glint'), ['--ozone-platform=x11', '--no-sandbox', '--package-check'], { env: unsafeEnv, stdio: ['ignore', 'ignore', 'pipe'], detached: true });
-let unsafeError = '';
-unsafe.stderr.on('data', data => { unsafeError += data; });
-const unsafeTimeout = setTimeout(() => { if (unsafe.pid) { try { process.kill(-unsafe.pid, 'SIGKILL'); } catch {} } }, 15000);
-const unsafeCode = await new Promise((resolve, reject) => { unsafe.once('error', reject); unsafe.once('exit', resolve); }).finally(() => clearTimeout(unsafeTimeout));
-assert.equal(unsafeCode, 1, 'An unsandboxed package must refuse to start');
-assert.match(unsafeError, /Glint requires the Chromium sandbox/);
-assert.ok(!existsSync(path.join(unsafeProfile, 'work/smoke-success.json')), 'Unsandboxed startup cannot pass verification');
-console.log('Verified refusal of unsandboxed startup.');
+for (const probe of [
+  { name: 'unsandboxed startup', args: ['--ozone-platform=x11', '--no-sandbox'], message: /Glint requires the Chromium sandbox/ },
+  { name: 'missing AppImage relaunch target', args: [], message: /Glint could not relaunch with X11/ }
+]) {
+  const profile = mkdtempSync(path.resolve('work', 'linux-package-check-'));
+  const env = { ...process.env, GLINT_SMOKE_ROOT: profile };
+  delete env.ELECTRON_RUN_AS_NODE;
+  if (!probe.args.length) {
+    env.APPDIR = path.resolve('release/linux-unpacked');
+    env.APPIMAGE = path.join(profile, 'missing.AppImage');
+  }
+  const child = spawn(path.resolve('release/linux-unpacked/glint'), [...sandboxArgs, ...probe.args, '--package-check'], { env, stdio: ['ignore', 'ignore', 'pipe'], detached: true });
+  let stderr = '';
+  child.stderr.on('data', data => { stderr += data; });
+  const timer = setTimeout(() => { if (child.pid) { try { process.kill(-child.pid, 'SIGKILL'); } catch {} } }, 15000);
+  const code = await new Promise((resolve, reject) => { child.once('error', reject); child.once('exit', resolve); }).finally(() => clearTimeout(timer));
+  assert.equal(code, 1, `${probe.name} must fail: ${stderr}`);
+  assert.match(stderr, probe.message);
+  assert.ok(!existsSync(path.join(profile, 'work/smoke-success.json')), `${probe.name} cannot pass verification`);
+  console.log(`Verified refusal of ${probe.name}.`);
+}
 const executables = ['release/linux-unpacked/glint', ...(appImage ? [`release/Glint-${version}-linux-x64.AppImage`] : [])];
 for (const file of executables) for (const ozoneArgs of [['--ozone-platform=x11'], []]) {
   const profile = mkdtempSync(path.resolve('work', 'linux-package-check-'));
@@ -61,7 +74,7 @@ for (const file of executables) for (const ozoneArgs of [['--ozone-platform=x11'
   if (file.endsWith('.AppImage') && ozoneArgs.length) env.APPIMAGE_EXTRACT_AND_RUN = '1';
   const logPath = path.join(profile, 'launch.log');
   const log = openSync(logPath, 'w');
-  const child = spawn(path.resolve(file), [...extractionArgs, ...ozoneArgs, '--package-check', '--password-store=basic'], { env, stdio: ['ignore', log, log], detached: true });
+  const child = spawn(path.resolve(file), [...extractionArgs, ...sandboxArgs, ...ozoneArgs, '--package-check', '--password-store=basic'], { env, stdio: ['ignore', log, log], detached: true });
   closeSync(log);
   let spawnError;
   let exited = false;
@@ -77,7 +90,7 @@ for (const file of executables) for (const ozoneArgs of [['--ozone-platform=x11'
       if (spawnError) throw spawnError;
       if (existsSync(error)) throw new Error(readFileSync(error, 'utf8'));
       if (exited && child.exitCode !== 0) throw new Error(`Package exited with ${child.exitCode}: ${file}`);
-      if (Date.now() > deadline) throw new Error(`Packaged startup timed out: ${file}`);
+      if (Date.now() > deadline) throw new Error(`Packaged startup timed out: ${file} (${ozoneArgs.length ? 'explicit X11' : 'direct relaunch'}); profile: ${profile}; exit: ${child.exitCode}; signal: ${child.signalCode}`);
       await new Promise(resolve => setTimeout(resolve, 100));
     }
     const report = JSON.parse(readFileSync(success, 'utf8'));

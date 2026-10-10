@@ -4,6 +4,7 @@ import type { IPCArgs, IPCChannel, IPCResult } from './ipc-contract';
 import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
+import { spawn } from 'node:child_process';
 import { RecordStore } from './records';
 import { OfflineDictionary, dictionaryText, usesDictionary } from './dictionary';
 import { CustomDictionaries } from './custom-dictionaries';
@@ -32,10 +33,6 @@ if (process.platform === 'linux' && app.commandLine.hasSwitch('no-sandbox')) {
 // relaunch; the development launcher and Linux desktop entry pass this up front.
 const appImage = app.isPackaged && process.env.APPIMAGE && process.env.APPDIR ? { file: process.env.APPIMAGE, directory: process.env.APPDIR } : undefined;
 const relaunch = process.platform === 'linux' ? xwaylandRelaunch(process.argv.slice(1), process.execPath, appImage) : undefined;
-if (relaunch) {
-  app.relaunch(relaunch);
-  app.exit(0);
-}
 if (platform === 'linux-wayland' && !smoke) {
   const features = app.commandLine.getSwitchValue('enable-features').split(',').filter(Boolean);
   app.commandLine.appendSwitch('enable-features', [...new Set([...features, 'GlobalShortcutsPortal'])].join(','));
@@ -552,7 +549,13 @@ function installIPC() {
   handle('quit', () => app.quit());
 }
 
-if (!app.requestSingleInstanceLock()) app.quit();
+if (relaunch) {
+  // Electron's relaunch helper sets NoNewPrivs, breaking the setuid sandbox
+  // when Ubuntu restricts user namespaces. Spawn before acquiring the app lock.
+  const child = spawn(relaunch.execPath, relaunch.args, { detached: !smoke, stdio: 'inherit' });
+  child.once('error', () => { console.error('Glint could not relaunch with X11.'); app.exit(1); });
+  child.once('spawn', () => { child.unref(); app.exit(0); });
+} else if (!app.requestSingleInstanceLock()) app.quit();
 else {
   try { logger = new AppLogger(paths.logs); }
   catch { console.error('Glint 无法初始化运行日志目录。'); }

@@ -45,7 +45,7 @@ jobs:
         run: |
           sudo chown root:root release/linux-unpacked/chrome-sandbox
           sudo chmod 4755 release/linux-unpacked/chrome-sandbox
-      - run: xvfb-run -a npm run package:verify:linux
+      - run: xvfb-run -a npm run package:verify:linux -- --setuid-sandbox
         env:
           XDG_SESSION_TYPE: x11
       - name: Upload Linux smoke failure reports
@@ -61,6 +61,7 @@ jobs:
             work/smoke-*/work/smoke-report.json
             work/smoke-*/work/*.png
             work/linux-package-check-*/work/smoke-error.txt
+            work/linux-package-check-*/work/smoke-success.json
             work/linux-package-check-*/launch.log
   check:
     name: Windows checks

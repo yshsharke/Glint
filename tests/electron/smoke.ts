@@ -7,6 +7,7 @@ import { platformDefaults } from '../../src/platform';
 import type { Settings, Selection } from '../../src/core';
 import type { ApplicationRuntime } from '../../src/main';
 import { mdxFixture } from '../fixtures/mdx';
+import { saveScreenshot } from './screenshot';
 
 export async function runSmoke(runtime: ApplicationRuntime, mode: string) {
   if (mode === 'toolbar') return runToolbarSmoke(runtime);
@@ -40,10 +41,10 @@ async function runSettingsSmoke(runtime: ApplicationRuntime) {
   runtime.tray!.emit('click');
   await until(() => !!runtime.setup?.isVisible() && !runtime.setup.webContents.isLoading(), 'tray click reopens closed settings');
   await wait(300);
-  await fs.promises.writeFile(path.join(folder, 'settings.png'), (await runtime.setup!.webContents.capturePage()).toPNG());
+  await saveScreenshot(runtime.setup!.webContents, path.join(folder, 'settings.png'));
   for (const [selector, name] of [['input[data-action-field=name]', 'input-focus-dark'], ['textarea[data-action-field=prompt]', 'textarea-focus-dark']]) {
     await runtime.setup!.webContents.executeJavaScript(`document.querySelector('${selector}').focus()`);
-    await fs.promises.writeFile(path.join(folder, `${name}.png`), (await runtime.setup!.webContents.capturePage()).toPNG());
+    await saveScreenshot(runtime.setup!.webContents, path.join(folder, `${name}.png`));
   }
   assert.ok(await runtime.setup!.webContents.executeJavaScript("!!document.querySelector('.fui-FluentProvider')"), 'official Fluent provider is mounted');
   await ui("document.querySelector('input[data-action-field=name]').focus(); document.querySelector('input[data-action-field=name]').select()");
@@ -56,7 +57,7 @@ async function runSettingsSmoke(runtime: ApplicationRuntime) {
   })()`), { text: '临时动作', focused: true, caret: 4 }, 'typing and status events preserve draft, focus and caret');
   await ui("document.querySelector('[data-revert]').click()");
   await ui("document.querySelector('[data-action-field=kind]').focus(); document.querySelector('[data-action-field=kind]').click()");
-  await fs.promises.writeFile(path.join(folder, 'dropdown-dark.png'), (await runtime.setup!.webContents.capturePage()).toPNG());
+  await saveScreenshot(runtime.setup!.webContents, path.join(folder, 'dropdown-dark.png'));
   assert.ok(await runtime.setup!.webContents.executeJavaScript("!!document.querySelector('[role=listbox]')"), 'Fluent dropdown opens');
   assert.deepEqual(await runtime.setup!.webContents.executeJavaScript("[...document.querySelectorAll('[role=listbox] [role=option]')].map(option => option.textContent)"), ['指令', '搜索'], 'only current action types are offered');
   for (const keyCode of ['Down', 'Return']) {
@@ -83,7 +84,7 @@ async function runSettingsSmoke(runtime: ApplicationRuntime) {
     const dialog = document.querySelector('[role=dialog]');
     return !dialog.parentElement.classList.contains('glint-provider');
   })()`), 'portal must not inherit the full-window layout class');
-  await fs.promises.writeFile(path.join(folder, 'icon-picker.png'), (await runtime.setup!.webContents.capturePage()).toPNG());
+  await saveScreenshot(runtime.setup!.webContents, path.join(folder, 'icon-picker.png'));
   await setInput('[data-icon-search]', '翻译');
   assert.ok(await runtime.setup!.webContents.executeJavaScript("!!document.querySelector('[data-pick-icon=languages]')"), 'Chinese search finds translation');
   const longIcon = 'triangles-centerline-dashed-horizontal';
@@ -107,12 +108,12 @@ async function runSettingsSmoke(runtime: ApplicationRuntime) {
   await ui("document.querySelector('[data-theme=light]').click()");
   for (const tab of ['actions', 'model', 'triggers', 'appearance']) {
     await ui(`document.querySelector('[data-page=${tab}]').click()`);
-    await fs.promises.writeFile(path.join(folder, `${tab}-light.png`), (await runtime.setup!.webContents.capturePage()).toPNG());
+    await saveScreenshot(runtime.setup!.webContents, path.join(folder, `${tab}-light.png`));
     if (tab === 'actions') {
       await ui("document.querySelector('input[data-action-field=name]').focus()");
-      await fs.promises.writeFile(path.join(folder, 'input-focus-light.png'), (await runtime.setup!.webContents.capturePage()).toPNG());
+      await saveScreenshot(runtime.setup!.webContents, path.join(folder, 'input-focus-light.png'));
       await ui("document.querySelector('[data-action-field=kind]').focus(); document.querySelector('[data-action-field=kind]').click()");
-      await fs.promises.writeFile(path.join(folder, 'dropdown-light.png'), (await runtime.setup!.webContents.capturePage()).toPNG());
+      await saveScreenshot(runtime.setup!.webContents, path.join(folder, 'dropdown-light.png'));
       runtime.setup!.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'Escape' });
       runtime.setup!.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'Escape' });
       await wait(200);
@@ -122,7 +123,7 @@ async function runSettingsSmoke(runtime: ApplicationRuntime) {
   runtime.setup!.setSize(820, 570);
   await runtime.setup!.webContents.executeJavaScript("document.querySelector('[data-page=actions]').click()");
   await wait(100);
-  await fs.promises.writeFile(path.join(folder, 'settings-small.png'), (await runtime.setup!.webContents.capturePage()).toPNG());
+  await saveScreenshot(runtime.setup!.webContents, path.join(folder, 'settings-small.png'));
   runtime.setup!.setSize(920, 640);
   await ui("document.querySelector('[data-page=triggers]').click()");
   const linux = runtime.platform.startsWith('linux');
@@ -383,7 +384,7 @@ async function runDictionarySmoke(runtime: ApplicationRuntime) {
     assert.equal(row.originalText, '“Apple,”'); assert.match(row.resultText, /ECDICT/);
     if (process.platform === 'win32') {
       await wait(250);
-      await fs.promises.writeFile(path.join(folder, 'dictionary.png'), (await runtime.resultWindow!.webContents.capturePage()).toPNG());
+      await saveScreenshot(runtime.resultWindow!.webContents, path.join(folder, 'dictionary.png'));
     }
     runtime.resultWindow!.setSize(380, 240);
     await wait(100);
@@ -433,7 +434,7 @@ async function runDictionarySmoke(runtime: ApplicationRuntime) {
     try { await ui("document.querySelector('[data-import-dictionary]').click()"); }
     finally { dialog.showOpenDialog = showOpenDialog; }
     await untilUI("document.querySelectorAll('[data-dictionary-id]').length === 1", 'MDX import through settings IPC');
-    if (process.platform === 'win32') await fs.promises.writeFile(path.join(folder, 'dictionary-settings.png'), (await runtime.setup!.webContents.capturePage()).toPNG());
+    if (process.platform === 'win32') await saveScreenshot(runtime.setup!.webContents, path.join(folder, 'dictionary-settings.png'));
     const custom = runtime.customDictionaries.list()[0];
     await select('apple');
     assert.equal(await runtime.resultWindow!.webContents.executeJavaScript('(async () => (await window.glint.snapshot()).result.dictionary.source)()'), 'Glint 测试词典');
@@ -484,7 +485,7 @@ async function runRecordsSmoke(runtime: ApplicationRuntime) {
     assert.equal(runtime.toolbar!.isFocusable(), process.platform === 'win32');
     assert.equal(await runtime.toolbar!.webContents.executeJavaScript("document.querySelectorAll('[data-run]').length"), next.actions.filter(a => a.enabled).length);
     assert.equal(await runtime.toolbar!.webContents.executeJavaScript("document.querySelector('[data-run=copy]')"), null, 'the retired default copy action is absent');
-    await fs.promises.writeFile(path.join(folder, 'toolbar.png'), (await runtime.toolbar!.webContents.capturePage()).toPNG());
+    await saveScreenshot(runtime.toolbar!.webContents, path.join(folder, 'toolbar.png'));
     const readToolbarLayout = () => runtime.toolbar!.webContents.executeJavaScript(`(() => {
       const actions = document.querySelector('.bar-actions');
       const last = actions.lastElementChild.getBoundingClientRect();
@@ -494,7 +495,7 @@ async function runRecordsSmoke(runtime: ApplicationRuntime) {
     assert.ok(toolbarLayout.lastRight <= toolbarLayout.viewportRight + 0.5, 'Last action clipped: ' + JSON.stringify(toolbarLayout));
     runtime.toolbar!.webContents.sendInputEvent({ type: 'mouseMove', x: Math.round(toolbarLayout.x), y: Math.round(toolbarLayout.y) });
     await wait(100);
-    await fs.promises.writeFile(path.join(folder, 'toolbar-last-hover.png'), (await runtime.toolbar!.webContents.capturePage()).toPNG());
+    await saveScreenshot(runtime.toolbar!.webContents, path.join(folder, 'toolbar-last-hover.png'));
     runtime.setup!.hide();
     assert.equal(await runtime.toolbar!.webContents.executeJavaScript("document.querySelectorAll('[data-open-settings]').length"), 1);
     await runtime.toolbar!.webContents.executeJavaScript("document.querySelector('button.mini-brand[data-open-settings]').click()");
@@ -567,12 +568,12 @@ async function runRecordsSmoke(runtime: ApplicationRuntime) {
     assert.equal(await runtime.resultWindow!.webContents.executeJavaScript("document.querySelector('#source-text').textContent"), runtime.result!.source, 'Fluent collapse reveals the original text');
     await runtime.resultWindow!.webContents.executeJavaScript("document.querySelector('.source-details button').click()");
     await wait(250);
-    await fs.promises.writeFile(path.join(folder, 'result.png'), (await runtime.resultWindow!.webContents.capturePage()).toPNG());
+    await saveScreenshot(runtime.resultWindow!.webContents, path.join(folder, 'result.png'));
     runtime.settings.theme = 'light'; runtime.broadcast(); await wait(100);
-    await fs.promises.writeFile(path.join(folder, 'result-light.png'), (await runtime.resultWindow!.webContents.capturePage()).toPNG());
+    await saveScreenshot(runtime.resultWindow!.webContents, path.join(folder, 'result-light.png'));
     runtime.resultWindow!.setSize(380, 240);
     const originalApp = runtime.result!.app; runtime.result!.app = 'a-very-long-source-application-name.exe'; runtime.broadcast(); await wait(100);
-    await fs.promises.writeFile(path.join(folder, 'result-small.png'), (await runtime.resultWindow!.webContents.capturePage()).toPNG());
+    await saveScreenshot(runtime.resultWindow!.webContents, path.join(folder, 'result-small.png'));
     runtime.result!.app = originalApp; runtime.resultWindow!.setSize(480, 360);
     const previousCardId = runtime.result!.id;
     responseDelay = 10_000;
@@ -691,7 +692,7 @@ async function runRecordsSmoke(runtime: ApplicationRuntime) {
       await restoreClipboard(emptyClipboard);
       assert.equal((await snapshotClipboard()).length, 0, 'restoring an empty snapshot clears copied text');
     } finally { await restoreClipboard(previousClipboard); }
-    await fs.promises.writeFile(path.join(folder, 'history.png'), (await runtime.setup!.webContents.capturePage()).toPNG());
+    await saveScreenshot(runtime.setup!.webContents, path.join(folder, 'history.png'));
     for (const kind of ['translation', 'polishing']) {
       const db = new DatabaseSync(runtime.recordPath(kind), { readOnly: true });
       try {

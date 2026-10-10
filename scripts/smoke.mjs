@@ -22,7 +22,8 @@ for (const scenario of scenarios) {
   const env = { ...process.env, GLINT_SMOKE_ROOT: profile, GLINT_SMOKE_SCENARIO: scenario };
   delete env.ELECTRON_RUN_AS_NODE;
   console.log(`Running ${scenario} smoke in an isolated profile.`);
-  const child = spawn(require('electron'), [entry, '--smoke', ...(process.platform === 'linux' ? ['--ozone-platform=x11', '--password-store=basic'] : [])], { env, stdio: 'inherit', windowsHide: true, detached: process.platform !== 'win32' });
+  // Xvfb has no hardware GPU. Use software rendering for Linux smoke captures.
+  const child = spawn(require('electron'), [entry, '--smoke', ...(process.platform === 'linux' ? ['--ozone-platform=x11', '--password-store=basic', '--disable-gpu'] : [])], { env, stdio: 'inherit', windowsHide: true, detached: process.platform !== 'win32' });
   const timer = setTimeout(() => {
     if (!child.pid) return;
     if (process.platform === 'win32') spawnSync('taskkill', ['/PID', String(child.pid), '/T', '/F'], { windowsHide: true, stdio: 'ignore' });
